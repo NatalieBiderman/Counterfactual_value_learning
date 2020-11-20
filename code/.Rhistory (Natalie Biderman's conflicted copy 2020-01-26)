@@ -1,0 +1,512 @@
+if (is_diff == 0){
+bias_cond = "Unchosen"
+bias_lab = "Mean bias: unchosen pairs"
+y_intercept = 0.5; y_breaks = c(0, 0.5, 1); y_limits = c(-0.05,1.05); corr_pos <- 1
+plot_title = "Better pairs memory predicts downward bias in unchosen pairs"
+} else {
+bias_cond = "bias_diff"
+bias_lab = "Chosen minus Unchosen bias"
+y_intercept = 0; y_breaks = c(-1, 0, 1); y_limits = c(-1.05,1.05); corr_pos <- 2
+plot_title = "Better pairs memory predicts magnitude of reversed decision bias"
+}
+# correlation text for plotting
+corr_mat_memory <- create_corr_text(upbias_memory_spread, c("Exp","condition"),
+bias_cond,"pair_acc",0.35,y_limits[1]+(0.1*corr_pos))
+corr_mat_memory[corr_mat_memory$condition %in% c("Different painter", "Low_reward",
+"Non_repeated", "Computer_choice"), "y"] <-
+y_limits[1]+(0.2*corr_pos)
+p2 <- list()
+for (i in 1:length(exps)){
+curr_data <- subset(upbias_memory_spread, Exp==exps[i]); curr_corr_mat <- subset(corr_mat_memory, Exp==exps[i])
+# for Exp7a, change factor level
+if ("Exp7a" %in% curr_data$Exp){
+curr_data$condition <- factor(as.factor(curr_data$condition), levels=c("Low_reward","High_reward"))
+curr_corr_mat$condition <- factor(as.factor(curr_corr_mat$condition), levels=c("Low_reward","High_reward"))
+}
+p2[[i]] <- ggplot(curr_data, aes_string(y=bias_cond,x="pair_acc",color="condition")) +
+geom_point(shape=19,size=1) +
+theme + point_plot_theme +
+geom_hline(yintercept=y_intercept, size=0.5, linetype="dashed") +
+#geom_vline(xintercept=0.5, size=0.5, linetype="dashed") +
+scale_y_continuous(expand=c(0,0), breaks=y_breaks, limits=y_limits) +
+scale_x_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+stat_smooth(method=lm) +
+geom_text(data=curr_corr_mat, mapping=aes(x=x, y=y, label=label),size=4) +
+theme(axis.title=element_blank(),
+legend.position="none")
+# For Exp2 - do not include legend and color the dots in black, otherwise include legend inside the plot
+if ("NA" %in% curr_data$condition){
+p2[[i]] <- p2[[i]] + scale_color_manual(breaks=c(unique(curr_data$condition)),values=c("black"))
+}
+# For Exp2, include labs.
+if (i==1){ p2[[i]] <- p2[[i]] + theme(axis.title=element_text()) +
+labs(y=bias_lab, x="Pairs memory (accuracy)")}
+}
+p_memory <- plot_grid(plotlist=p2, ncol=length(exps))
+memory_title <- ggdraw() +
+draw_label("Better pairs memory predicts downward bias in unchosen pairs", fontface='bold', size=18)
+p_memory_full <-plot_grid(memory_title, p_memory, ncol=1, rel_heights=c(0.1, 1))
+# bind the two plots together
+p_upbias_memory <- plot_grid(p_upbias_full,p_memory_full, ncol=1, labels=c("A","B"), rel_heights = c(1,0.9))
+ggsave(filename=sprintf("../results/Plots/%s_%s.%s","Figure1",bias_cond,fig_type), plot=p_upbias_memory,
+width=fig_size[1]+5,height=fig_size[2]-2)
+return(p_upbias_memory)
+}
+p1 <- plot_upbias_memory(1)
+p2 <- plot_upbias_memory(0)
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+rm(list=ls(all=TRUE))
+# If packages are not installed, install. Then, load libraries.
+list_of_packages <- c("ggplot2", "Rmisc", "cowplot", "reshape2", "gridExtra", "arm", "mosaic", "stringr", "tidyr", "dplyr", "bayesplot")
+new_packages <- list_of_packages[!(list_of_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+lapply(list_of_packages, require, character.only = TRUE)
+# Load functions
+source("Functions/plotting.R")
+# Figure parameters
+fig_size = c(10,10)
+fig_type = "png" # or eps
+Save_plots <- 1
+# Load data
+load("../data/Clean_data_lists/clean_data_Exp1.RData")
+load("../data/Clean_data_lists/clean_data_Exp2.RData")
+load("../data/Clean_data_lists/clean_data_Exp3a.RData")
+load("../data/Clean_data_lists/clean_data_Exp3b.RData")
+load("../data/Clean_data_lists/clean_data_Exp4.RData")
+load("../data/Clean_data_lists/clean_data_Exp5.RData")
+load("../data/Clean_data_lists/clean_data_Exp6a.RData")
+load("../data/Clean_data_lists/clean_data_Exp6b.RData")
+load("../data/Clean_data_lists/clean_data_Exp7a.RData")
+load("../data/Clean_data_lists/clean_data_Exp7b.RData")
+load("../data/Clean_data_lists/clean_data_Exp8.RData")
+# Load model coefs
+load("../data/Models/Choice_Ratings_models/Coef_lists/coef_list_Exp1.RData")
+load("../data/Models/Choice_Ratings_models/Coef_lists/coef_list_Exp2.RData")
+load("../data/Models/Choice_Ratings_models/Coef_lists/coef_list_Exp3.RData")
+bind_experiments <- function(phase_types, exps, collapse_exps_list, new_exp_names){
+all_dfs_list <- list()
+for (p in 1:length(phase_types)){
+data <- c()
+for (i in 1:length(exps)){
+curr_data <- eval(parse(text = sprintf("clean_data_%s$%s",exps[i],phase_types[p])))
+data <- bind_rows(data,curr_data)
+}
+# if we want some experiments to be collapsed into a single experiment
+if (length(collapse_exps_list)!=0) {
+data$Version <- NA
+for (k in 1:length(collapse_exps_list)){ # run over a list of experiments
+for (j in 1:lengths(collapse_exps_list)[k]){ # run over each sub-version
+curr_exp <- collapse_exps_list[[k]][j]
+# move specific experiment to version
+data[data$Exp==curr_exp, "Version"] <- data$Exp[data$Exp==curr_exp]
+# change the experiment to the uniting experiment name
+data$Exp[data$Exp==curr_exp] <- new_exp_names[k]
+}
+}
+}
+all_dfs_list[[p]] <- data
+}
+names(all_dfs_list) <- phase_types
+return(all_dfs_list)
+}
+exps_to_be_used <- c("Exp2", "Exp3a", "Exp3b", "Exp6b", "Exp7a", "Exp8")
+collapse_exps_list <- list(c("Exp3a","Exp3b"))
+new_exp_names <- c("Exp3")
+phase_types <- names(clean_data_Exp2)[-c(1:2)]
+all_exps_list <- bind_experiments(phase_types, exps_to_be_used, collapse_exps_list, new_exp_names)
+n_exps <- length(unique(all_exps_list$final_decisions$Exp))
+# ==== Summarize upbias and memory performance per subject ====
+# compute upward bias (mean gain chosen)
+upbias <- all_exps_list$final_decisions %>% group_by(Exp, PID, chosen_trial_name,
+same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name) %>%
+dplyr::summarize(upbias = mean(higher_outcome_chosen, na.rm=1)) %>%
+unite("condition", same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name)
+upbias$condition <- str_remove_all(upbias$condition, c("NA_NA_|NA_|_NA|_NA_NA"))
+# compute memory performance
+memory_subs <- all_exps_list$memory %>% group_by(Exp, PID, same_painter_name,
+repeat_cond_name, reward_cond_name, agency_cond_name) %>%
+dplyr::summarize(pair_acc = mean(pair_acc, na.rm=1))%>%
+unite("condition", same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name)
+memory_subs$condition <- str_remove_all(memory_subs$condition, c("NA_NA_|NA_|_NA|_NA_NA"))
+# bind memory and upbias mats
+upbias_memory <- merge(upbias,memory_subs, by=c("Exp","PID", "condition"))
+# spread upbias by choice and add difference in bias
+upbias_memory_spread <- upbias_memory %>%
+spread(chosen_trial_name,upbias) %>%
+mutate(bias_diff = Chosen-Unchosen)
+# compute stats summary for crosserrors of upbias
+sum_stats_choice <- upbias_memory_spread %>%
+select(-c(bias_diff,pair_acc)) %>%
+group_by(Exp, condition) %>%
+summarise_each(funs(mean,ci=sd(.)/sqrt(n())*2),-PID)
+colnames(sum_stats_choice)[colnames(sum_stats_choice) %in% c("Chosen_mean", "Unchosen_mean")] <-
+c("Chosen","Unchosen")
+plot_upbias_memory <- function(is_diff){
+# ====== Show upward bias for chosen and unchosen pairs ======
+exps <- unique(upbias_memory_spread$Exp)
+p1 <- list()
+for (i in 1:length(exps)){
+curr_data <- subset(upbias_memory_spread, Exp==exps[i]); curr_sum_stats <- subset(sum_stats_choice, Exp==exps[i])
+# for Exp7a, change factor level
+if ("Exp7a" %in% curr_data$Exp){
+curr_data$condition <- factor(as.factor(curr_data$condition), levels=c("Low_reward","High_reward"))
+curr_sum_stats$condition <- factor(as.factor(curr_sum_stats$condition), levels=c("Low_reward","High_reward"))
+}
+p1[[i]] <- ggplot(curr_data, aes(x=Chosen,y=Unchosen,color=condition)) +
+geom_point(shape=19,size=1,alpha=0.5) +
+geom_hline(yintercept=0.5, size=0.5, linetype="dashed") +
+geom_vline(xintercept=0.5, size=0.5, linetype="dashed") +
+scale_y_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+scale_x_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+ggtitle(exps[i]) +
+theme + point_plot_theme +
+geom_errorbarh(data=curr_sum_stats, width=0.05, size=0.8,
+aes(xmax=Chosen+Chosen_ci, xmin=Chosen-Chosen_ci, y=Unchosen)) +
+geom_errorbar(data=curr_sum_stats, width = 0.05, size = 0.8,
+aes(x=Chosen, ymax=Unchosen+Unchosen_ci, ymin=Unchosen-Unchosen_ci)) +
+geom_point(data=curr_sum_stats, size = 2.5) +
+theme(axis.title=element_blank())
+# For Exp2 - do not include legend and color the dots in black, otherwise include legend inside the plot
+if ("NA" %in% curr_data$condition){
+p1[[i]] <- p1[[i]] + theme(legend.position="none") +
+scale_color_manual(breaks=c(unique(curr_data$condition)),values=c("black"))
+} else {
+p1[[i]] <- p1[[i]] + theme(legend.position=c(0.05,0.88))
+}
+# For Exp2, include labs.
+if (i==1){ p1[[i]] <- p1[[i]] + theme(axis.title=element_text()) + labs(y="Mean bias: unchosen pairs",
+x="Mean bias: chosen pairs")}
+}
+p_upbias <- plot_grid(plotlist=p1, ncol=length(exps))
+upbias_title <- ggdraw() +
+draw_label("Reversed decision bias for chosen and unchosen pairs", fontface='bold', size=19)
+p_upbias_full <-plot_grid(upbias_title, p_upbias, ncol=1, rel_heights=c(0.1, 1))
+# ====== Show upbias in unchosen pairs as a function of memory ======
+if (is_diff == 0){
+bias_cond = "Unchosen"
+bias_lab = "Mean bias: unchosen pairs"
+y_intercept = 0.5; y_breaks = c(0, 0.5, 1); y_limits = c(-0.05,1.05); corr_pos <- 1
+plot_title = "Better pairs memory predicts downward bias in unchosen pairs"
+} else {
+bias_cond = "bias_diff"
+bias_lab = "Chosen minus Unchosen bias"
+y_intercept = 0; y_breaks = c(-1, 0, 1); y_limits = c(-1.05,1.05); corr_pos <- 2
+plot_title = "Better pairs memory predicts magnitude of reversed decision bias"
+}
+# correlation text for plotting
+corr_mat_memory <- create_corr_text(upbias_memory_spread, c("Exp","condition"),
+bias_cond,"pair_acc",0.35,y_limits[1]+(0.1*corr_pos))
+corr_mat_memory[corr_mat_memory$condition %in% c("Different painter", "Low_reward",
+"Non_repeated", "Computer_choice"), "y"] <-
+y_limits[1]+(0.2*corr_pos)
+p2 <- list()
+for (i in 1:length(exps)){
+curr_data <- subset(upbias_memory_spread, Exp==exps[i]); curr_corr_mat <- subset(corr_mat_memory, Exp==exps[i])
+# for Exp7a, change factor level
+if ("Exp7a" %in% curr_data$Exp){
+curr_data$condition <- factor(as.factor(curr_data$condition), levels=c("Low_reward","High_reward"))
+curr_corr_mat$condition <- factor(as.factor(curr_corr_mat$condition), levels=c("Low_reward","High_reward"))
+}
+p2[[i]] <- ggplot(curr_data, aes_string(y=bias_cond,x="pair_acc",color="condition")) +
+geom_point(shape=19,size=1) +
+theme + point_plot_theme +
+geom_hline(yintercept=y_intercept, size=0.5, linetype="dashed") +
+#geom_vline(xintercept=0.5, size=0.5, linetype="dashed") +
+scale_y_continuous(expand=c(0,0), breaks=y_breaks, limits=y_limits) +
+scale_x_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+stat_smooth(method=lm) +
+geom_text(data=curr_corr_mat, mapping=aes(x=x, y=y, label=label),size=4) +
+theme(axis.title=element_blank(),
+legend.position="none")
+# For Exp2 - do not include legend and color the dots in black, otherwise include legend inside the plot
+if ("NA" %in% curr_data$condition){
+p2[[i]] <- p2[[i]] + scale_color_manual(breaks=c(unique(curr_data$condition)),values=c("black"))
+}
+# For Exp2, include labs.
+if (i==1){ p2[[i]] <- p2[[i]] + theme(axis.title=element_text()) +
+labs(y=bias_lab, x="Pairs memory (accuracy)")}
+}
+p_memory <- plot_grid(plotlist=p2, ncol=length(exps))
+memory_title <- ggdraw() +
+draw_label("Better pairs memory predicts downward bias in unchosen pairs", fontface='bold', size=18)
+p_memory_full <-plot_grid(memory_title, p_memory, ncol=1, rel_heights=c(0.1, 1))
+# bind the two plots together
+p_upbias_memory <- plot_grid(p_upbias_full,p_memory_full, ncol=1, labels=c("A","B"), rel_heights = c(1,0.9))
+ggsave(filename=sprintf("../results/Plots/%s_%s.%s","Figure1",bias_cond,fig_type), plot=p_upbias_memory,
+width=fig_size[1]+5,height=fig_size[2]-2)
+return(p_upbias_memory)
+}
+p1 <- plot_upbias_memory(1)
+p2 <- plot_upbias_memory(0)
+p1
+bind_experiments <- function(phase_types, exps, collapse_exps_list, new_exp_names){
+all_dfs_list <- list()
+for (p in 1:length(phase_types)){
+data <- c()
+for (i in 1:length(exps)){
+curr_data <- eval(parse(text = sprintf("clean_data_%s$%s",exps[i],phase_types[p])))
+data <- bind_rows(data,curr_data)
+}
+# if we want some experiments to be collapsed into a single experiment
+if (length(collapse_exps_list)!=0) {
+data$Version <- NA
+for (k in 1:length(collapse_exps_list)){ # run over a list of experiments
+for (j in 1:lengths(collapse_exps_list)[k]){ # run over each sub-version
+curr_exp <- collapse_exps_list[[k]][j]
+# move specific experiment to version
+data[data$Exp==curr_exp, "Version"] <- data$Exp[data$Exp==curr_exp]
+# change the experiment to the uniting experiment name
+data$Exp[data$Exp==curr_exp] <- new_exp_names[k]
+}
+}
+}
+all_dfs_list[[p]] <- data
+}
+names(all_dfs_list) <- phase_types
+return(all_dfs_list)
+}
+exps_to_be_used <- c("Exp2", "Exp3a", "Exp3b", "Exp6b", "Exp7a", "Exp8")
+collapse_exps_list <- list(c("Exp3a","Exp3b"))
+new_exp_names <- c("Exp3")
+phase_types <- names(clean_data_Exp2)[-c(1:2)]
+all_exps_list <- bind_experiments(phase_types, exps_to_be_used, collapse_exps_list, new_exp_names)
+n_exps <- length(unique(all_exps_list$final_decisions$Exp))
+# ==== Summarize upbias and memory performance per subject ====
+# compute upward bias (mean gain chosen)
+upbias <- all_exps_list$final_decisions %>% group_by(Exp, PID, chosen_trial_name,
+same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name) %>%
+dplyr::summarize(upbias = mean(higher_outcome_chosen, na.rm=1)) %>%
+unite("condition", same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name)
+upbias$condition <- str_remove_all(upbias$condition, c("NA_NA_|NA_|_NA|_NA_NA"))
+# compute memory performance
+memory_subs <- all_exps_list$memory %>% group_by(Exp, PID, same_painter_name,
+repeat_cond_name, reward_cond_name, agency_cond_name) %>%
+dplyr::summarize(pair_acc = mean(pair_acc, na.rm=1))%>%
+unite("condition", same_painter_name, repeat_cond_name, reward_cond_name, agency_cond_name)
+memory_subs$condition <- str_remove_all(memory_subs$condition, c("NA_NA_|NA_|_NA|_NA_NA"))
+# bind memory and upbias mats
+upbias_memory <- merge(upbias,memory_subs, by=c("Exp","PID", "condition"))
+# spread upbias by choice and add difference in bias
+upbias_memory_spread <- upbias_memory %>%
+spread(chosen_trial_name,upbias) %>%
+mutate(bias_diff = Chosen-Unchosen)
+# compute stats summary for crosserrors of upbias
+sum_stats_choice <- upbias_memory_spread %>%
+select(-c(bias_diff,pair_acc)) %>%
+group_by(Exp, condition) %>%
+summarise_each(funs(mean,ci=sd(.)/sqrt(n())*2),-PID)
+colnames(sum_stats_choice)[colnames(sum_stats_choice) %in% c("Chosen_mean", "Unchosen_mean")] <-
+c("Chosen","Unchosen")
+plot_upbias_memory <- function(is_diff){
+# ====== Show upward bias for chosen and unchosen pairs ======
+exps <- unique(upbias_memory_spread$Exp)
+p1 <- list()
+for (i in 1:length(exps)){
+curr_data <- subset(upbias_memory_spread, Exp==exps[i]); curr_sum_stats <- subset(sum_stats_choice, Exp==exps[i])
+# for Exp7a, change factor level
+if ("Exp7a" %in% curr_data$Exp){
+curr_data$condition <- factor(as.factor(curr_data$condition), levels=c("Low_reward","High_reward"))
+curr_sum_stats$condition <- factor(as.factor(curr_sum_stats$condition), levels=c("Low_reward","High_reward"))
+}
+p1[[i]] <- ggplot(curr_data, aes(x=Chosen,y=Unchosen,color=condition)) +
+geom_point(shape=19,size=1,alpha=0.5) +
+geom_hline(yintercept=0.5, size=0.5, linetype="dashed") +
+geom_vline(xintercept=0.5, size=0.5, linetype="dashed") +
+scale_y_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+scale_x_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+ggtitle(exps[i]) +
+theme + point_plot_theme +
+geom_errorbarh(data=curr_sum_stats, width=0.05, size=0.8,
+aes(xmax=Chosen+Chosen_ci, xmin=Chosen-Chosen_ci, y=Unchosen)) +
+geom_errorbar(data=curr_sum_stats, width = 0.05, size = 0.8,
+aes(x=Chosen, ymax=Unchosen+Unchosen_ci, ymin=Unchosen-Unchosen_ci)) +
+geom_point(data=curr_sum_stats, size = 2.5) +
+theme(axis.title=element_blank())
+# For Exp2 - do not include legend and color the dots in black, otherwise include legend inside the plot
+if ("NA" %in% curr_data$condition){
+p1[[i]] <- p1[[i]] + theme(legend.position="none") +
+scale_color_manual(breaks=c(unique(curr_data$condition)),values=c("black"))
+} else {
+p1[[i]] <- p1[[i]] + theme(legend.position=c(0.05,0.88))
+}
+# For Exp2, include labs.
+if (i==1){ p1[[i]] <- p1[[i]] + theme(axis.title=element_text()) + labs(y="Mean bias: unchosen pairs",
+x="Mean bias: chosen pairs")}
+}
+p_upbias <- plot_grid(plotlist=p1, ncol=length(exps))
+upbias_title <- ggdraw() +
+draw_label("Reversed decision bias for chosen and unchosen pairs", fontface='bold', size=19)
+p_upbias_full <-plot_grid(upbias_title, p_upbias, ncol=1, rel_heights=c(0.1, 1))
+# ====== Show upbias in unchosen pairs as a function of memory ======
+if (is_diff == 0){
+bias_cond = "Unchosen"
+bias_lab = "Mean bias: unchosen pairs"
+y_intercept = 0.5; y_breaks = c(0, 0.5, 1); y_limits = c(-0.05,1.05); corr_pos <- 1
+plot_title = "Better pairs memory predicts downward bias in unchosen pairs"
+} else {
+bias_cond = "bias_diff"
+bias_lab = "Chosen minus Unchosen bias"
+y_intercept = 0; y_breaks = c(-1, 0, 1); y_limits = c(-1.05,1.05); corr_pos <- 2
+plot_title = "Better pairs memory predicts magnitude of reversed decision bias"
+}
+# correlation text for plotting
+corr_mat_memory <- create_corr_text(upbias_memory_spread, c("Exp","condition"),
+bias_cond,"pair_acc",0.35,y_limits[1]+(0.1*corr_pos))
+corr_mat_memory[corr_mat_memory$condition %in% c("Different painter", "Low_reward",
+"Non_repeated", "Computer_choice"), "y"] <-
+y_limits[1]+(0.2*corr_pos)
+p2 <- list()
+for (i in 1:length(exps)){
+curr_data <- subset(upbias_memory_spread, Exp==exps[i]); curr_corr_mat <- subset(corr_mat_memory, Exp==exps[i])
+# for Exp7a, change factor level
+if ("Exp7a" %in% curr_data$Exp){
+curr_data$condition <- factor(as.factor(curr_data$condition), levels=c("Low_reward","High_reward"))
+curr_corr_mat$condition <- factor(as.factor(curr_corr_mat$condition), levels=c("Low_reward","High_reward"))
+}
+p2[[i]] <- ggplot(curr_data, aes_string(y=bias_cond,x="pair_acc",color="condition")) +
+geom_point(shape=19,size=1,alpha=0.5) +
+theme + point_plot_theme +
+geom_hline(yintercept=y_intercept, size=0.5, linetype="dashed") +
+#geom_vline(xintercept=0.5, size=0.5, linetype="dashed") +
+scale_y_continuous(expand=c(0,0), breaks=y_breaks, limits=y_limits) +
+scale_x_continuous(expand=c(0,0), breaks=c(0, 0.5, 1), limits=c(-0.01, 1.01)) +
+stat_smooth(method=lm) +
+geom_text(data=curr_corr_mat, mapping=aes(x=x, y=y, label=label),size=4) +
+theme(axis.title=element_blank(),
+legend.position="none")
+# For Exp2 - do not include legend and color the dots in black, otherwise include legend inside the plot
+if ("NA" %in% curr_data$condition){
+p2[[i]] <- p2[[i]] + scale_color_manual(breaks=c(unique(curr_data$condition)),values=c("black"))
+}
+# For Exp2, include labs.
+if (i==1){ p2[[i]] <- p2[[i]] + theme(axis.title=element_text()) +
+labs(y=bias_lab, x="Pairs memory (accuracy)")}
+}
+p_memory <- plot_grid(plotlist=p2, ncol=length(exps))
+memory_title <- ggdraw() +
+draw_label("Better pairs memory predicts downward bias in unchosen pairs", fontface='bold', size=18)
+p_memory_full <-plot_grid(memory_title, p_memory, ncol=1, rel_heights=c(0.1, 1))
+# bind the two plots together
+p_upbias_memory <- plot_grid(p_upbias_full,p_memory_full, ncol=1, labels=c("A","B"), rel_heights = c(1,0.9))
+ggsave(filename=sprintf("../results/Plots/%s_%s.%s","Figure1",bias_cond,fig_type), plot=p_upbias_memory,
+width=fig_size[1]+5,height=fig_size[2]-2)
+return(p_upbias_memory)
+}
+p1 <- plot_upbias_memory(1)
+p2 <- plot_upbias_memory(0)
+test <- clean_data_Exp6b$final_ratings
+View(test)
+names(clean_data_Exp2)[-c(1:2)]
+names(clean_data_Exp6b)[-c(1:2)]
+bind_experiments <- function(phase_types, exps, collapse_exps_list, new_exp_names){
+all_dfs_list <- list()
+for (p in 1:length(phase_types)){
+data <- c()
+for (i in 1:length(exps)){
+curr_data <- eval(parse(text = sprintf("clean_data_%s$%s",exps[i],phase_types[p])))
+data <- bind_rows(data,curr_data)
+}
+# if we want some experiments to be collapsed into a single experiment
+if (length(collapse_exps_list)!=0) {
+data$Version <- NA
+for (k in 1:length(collapse_exps_list)){ # run over a list of experiments
+for (j in 1:lengths(collapse_exps_list)[k]){ # run over each sub-version
+curr_exp <- collapse_exps_list[[k]][j]
+# move specific experiment to version
+data[data$Exp==curr_exp, "Version"] <- data$Exp[data$Exp==curr_exp]
+# change the experiment to the uniting experiment name
+data$Exp[data$Exp==curr_exp] <- new_exp_names[k]
+}
+}
+}
+all_dfs_list[[p]] <- data
+}
+names(all_dfs_list) <- phase_types
+return(all_dfs_list)
+}
+exps_to_be_used <- c("Exp2", "Exp3a", "Exp3b", "Exp6b", "Exp7a", "Exp8")
+collapse_exps_list <- list(c("Exp3a","Exp3b"))
+new_exp_names <- c("Exp3")
+phase_types <- names(clean_data_Exp6b)[-c(1:2)]
+all_exps_list <- bind_experiments(phase_types, exps_to_be_used, collapse_exps_list, new_exp_names)
+n_exps <- length(unique(all_exps_list$final_decisions$Exp))
+test <- all_exps_list$final_ratings
+View(test)
+final_ratings <- all_exps_list$final_ratings
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating))
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value")
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index))
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value))
+new_ratings <- final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value))
+ggplot(new_ratings, aes(y=rating_norm, color=PID)) + geom_histogram()
+ggplot(new_ratings, aes(x=rating_norm, color=PID)) + geom_histogram()
+ggplot(new_ratings, aes(x=rating_norm, color=PID)) + geom_histogram() + theme(legend.position="none")
+View(new_ratings)
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+spread(rating_type, rating_norm)
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+spread(rating_type, rating_norm, -value)
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+spread(rating_type, rating_norm, -"value")
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+spread(rating_type, rating_norm, -value)
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+spread(rating_type, rating_norm, -c(value))
+final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+select(-value) %>%
+spread(rating_type, rating_norm)
+new_ratings <- final_ratings %>% select(c(Exp, PID, index, initial_rating, new_rating)) %>%
+group_by(Exp, PID) %>%
+gather("rating_type", "value", -c(Exp, PID, index)) %>%
+mutate(rating_norm = scale(value)) %>%
+select(-value) %>%
+spread(rating_type, rating_norm)
+colnames(new_ratings)[4:5] <- c("norm_initial_rating", "norm_final_rating")
+final_rating <- merge(final_rating, new_ratings, by=c("Exp","PID","index"))
+final_ratings <- merge(final_ratings, new_ratings, by=c("Exp","PID","index"))
+View(final_ratings)
+library(lme4)
+library(arm)
+final_ratings
+final_ratings <- mutate(final_ratings,
+repeat_cond = ifelse(repeat_cond==0,-1,repeat_cond),
+chosen_trial_name = ifelse(chosen_trial_name==0,-1,chosen_trial_name))
+final_ratings <- mutate(final_ratings,
+repeat_cond = ifelse(repeat_cond==0,-1,repeat_cond),
+chosen_obj = ifelse(chosen_obj==0,-1,chosen_obj))
+M1 <- lmer(data = subset(final_rating,Exp=="Exp7a" & deliberated_stim==1),
+norm_final_rating ~ chosen_obj * reward_type * reward_cond * norm_initial_rating +
+(chosen_obj * reward_type * reward_cond * norm_initial_rating | PID))
+M1 <- lmer(data = subset(final_ratings,Exp=="Exp7a" & deliberated_stim==1),
+norm_final_rating ~ chosen_obj * reward_type * reward_cond * norm_initial_rating +
+(chosen_obj * reward_type * reward_cond * norm_initial_rating | PID))
+M1
+save(M1, file="../data/Models/M_Exp7a_final_ratings.RData")

@@ -1,0 +1,106 @@
+---
+title: "Preprocessing_data"
+author: "Natalie Biderman"
+date: "09/09/2020"
+output: html_document
+---
+
+This script loads csv files of different experiments (same general task), and outputs pre-processed lists of data.
+All experiments include several phases, each involves different column names. Thus, to make the data more interpretable, we rearrange the csv files and create data structures for each experimental phase.
+All experiments were conducted on MTurk. Accordingly, we assess the behavior of participants to find those who did not pass our attention checks and browsed different websites during their experiment. We remove these participants prior to analyzing the data. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load packages and functions
+
+```{r, echo=FALSE}
+
+# If packages are not installed, install. Then, load libraries. 
+list_of_packages <- c("tidyr", "dplyr", "stringr", "mosaic") 
+new_packages <- list_of_packages[!(list_of_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+lapply(list_of_packages, require, character.only = TRUE)
+source("Functions/process_data.R")
+
+```
+
+Load data 
+
+```{r load data, message=FALSE, warning=FALSE}
+
+# Experimental data
+data_Pilot <- read.csv("../data/csv_files/Experimental_data/data_Pilot.csv")
+data_Exp1 <- read.csv("../data/csv_files/Experimental_data/data_Exp1.csv")
+data_Exp2 <- read.csv("../data/csv_files/Experimental_data/data_Exp2.csv")
+data_Exp3 <- read.csv("../data/csv_files/Experimental_data/data_Exp3.csv")
+data_Exp4 <- read.csv("../data/csv_files/Experimental_data/data_Exp4.csv")
+
+# Interactive data (to look at mturk behavior)
+int_data_Pilot <- read.csv("../data/csv_files/Interactive_data/int_data_Pilot.csv")
+int_data_Exp1 <- read.csv("../data/csv_files/Interactive_data/int_data_Exp1.csv")
+int_data_Exp2 <- read.csv("../data/csv_files/Interactive_data/int_data_Exp2.csv")
+int_data_Exp3 <- read.csv("../data/csv_files/Interactive_data/int_data_Exp3.csv")
+int_data_Exp4 <- read.csv("../data/csv_files/Interactive_data/int_data_Exp4.csv")
+
+```
+
+Create data lists 
+
+```{r create data lists, warning=FALSE}
+
+# Create data lists 
+data_list_Pilot <- process_data("Pilot", data_Pilot, int_data_Pilot)
+data_list_Exp1 <- process_data("Exp1", data_Exp1, int_data_Exp1)
+data_list_Exp2 <- process_data("Exp2", data_Exp2, int_data_Exp2)
+data_list_Exp3 <- process_data("Exp3", data_Exp3, int_data_Exp3)
+data_list_Exp4 <- process_data("Exp4", data_Exp4, int_data_Exp4)
+
+# Save them in folder
+save(data_list_Pilot, file = "../data/Full_data_lists/data_list_Pilot.RData")
+save(data_list_Exp1, file = "../data/Full_data_lists/data_list_Exp1.RData")
+save(data_list_Exp2, file = "../data/Full_data_lists/data_list_Exp2.RData")
+save(data_list_Exp3, file = "../data/Full_data_lists/data_list_Exp3.RData")
+save(data_list_Exp4, file = "../data/Full_data_lists/data_list_Exp4.RData")
+
+```
+
+Here we remove outlier mturk participants. These are participants that had one or more of the following conditions: 
+1. Below 0.5 gain probability in final decisions phase for chosen-pairs trials.
+2. Above 25 non-responses for any phase.
+3. Above 25 blur+focus events (which signify the participant browsed another window)
+4. Above 10 failures of instruction tests
+5. above 10 too-fast (< 300ms) deliberation trials
+
+```{r remove mturk outliers, warning=FALSE}
+
+# Set criteria thresholds
+non_responses <- 25
+blur_focus <- 25
+inst_tests <- 10
+del_too_fast <- 10
+outcome_learn <- 0.5 
+
+# Find outliers
+outliers_Pilot <- find_outlier_mturkers(data_list_Pilot,non_responses,blur_focus,inst_tests,del_too_fast,outcome_learn)
+outliers_Exp1 <- find_outlier_mturkers(data_list_Exp1,non_responses,blur_focus,inst_tests,del_too_fast,outcome_learn)
+outliers_Exp2 <- find_outlier_mturkers(data_list_Exp2,non_responses,blur_focus,inst_tests,del_too_fast,outcome_learn)
+outliers_Exp3 <- find_outlier_mturkers(data_list_Exp3,non_responses,blur_focus,inst_tests,del_too_fast,outcome_learn)
+outliers_Exp4 <- find_outlier_mturkers(data_list_Exp4,non_responses,blur_focus,inst_tests,del_too_fast,outcome_learn)
+
+# Remove outliers
+clean_data_Pilot <- remove_outlier_mturk(data_list_Pilot, outliers_Pilot$outliers)
+clean_data_Exp1 <- remove_outlier_mturk(data_list_Exp1, outliers_Exp1$outliers)
+clean_data_Exp2 <- remove_outlier_mturk(data_list_Exp2, outliers_Exp2$outliers)
+clean_data_Exp3 <- remove_outlier_mturk(data_list_Exp3, outliers_Exp3$outliers)
+clean_data_Exp4 <- remove_outlier_mturk(data_list_Exp4, outliers_Exp4$outliers)
+
+# Save them in folder
+save(clean_data_Pilot, file = "../data/Clean_data_lists/clean_data_Pilot.RData")
+save(clean_data_Exp1, file = "../data/Clean_data_lists/clean_data_Exp1.RData")
+save(clean_data_Exp2, file = "../data/Clean_data_lists/clean_data_Exp2.RData")
+save(clean_data_Exp3, file = "../data/Clean_data_lists/clean_data_Exp3.RData")
+save(clean_data_Exp4, file = "../data/Clean_data_lists/clean_data_Exp4.RData")
+
+```
