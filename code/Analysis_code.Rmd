@@ -1,6 +1,6 @@
 ---
 title: "Analysis code"
-subtitle: "How we learn to value the road not taken: The role of deliberation and memory in the valuation of unchosen options"
+subtitle: "How we learn to value the road not taken: Deliberation and memory shape the valuation of unchosen options"
 author: "Natalie Biderman"
 date: "11/09/2020"
 output: 
