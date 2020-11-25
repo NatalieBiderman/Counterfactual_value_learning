@@ -1,19 +1,19 @@
 <center> <h3>How we learn to value the road not taken: Deliberation and memory shape the valuation of unchosen options</h3> </center>
 <center> <h4>Natalie Biderman and Daphna Shohamy, November 2020</center> </h4>
-\
-
+  
+  
 <span style="font-size:1.2em;">
 The repository accompanies our manuscript and includes codes to analyze data from five Mechanical Turk experiments assessing the effects of choice outcomes on the inferred value of unchosen options (see figure below).  
-\
+
 All codes were written by Natalie Biderman (*natalie.biderman@columbia.edu*).  
-\
+
 </span>
 
 ![Figure1. Experimental design](results/Plots/Figure1.png)  
 \
 <span style="font-size:1.2em;">
 The repository includes three folders: (1) code, (2) data, (3) results.  
-\
+
 </span>
 
 #### code folder
@@ -38,4 +38,4 @@ Lastly, the Models subfolder should include all the pre-trained Bayesian regress
 <span style="font-size:1.2em;">
 This folder includes the plots we generate in our analysis code.  
 </span>
-\
+
