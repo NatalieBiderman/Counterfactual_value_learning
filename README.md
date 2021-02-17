@@ -19,7 +19,7 @@ The repository includes three folders: (1) code, (2) data, (3) results.
 #### code folder
 <span style="font-size:1.2em;">
 All the results and figures reported in our manuscript are described in Analysis_code.html.   
-We fit hierarchical Bayesian regression models via the RStanArm package, which under the hood runs multiple independent chains of Hamiltonian Monte Carlo, and logs samples from the posterior distribution over the model parameters. These models may take a few hours to run and their size is considerabely large (>2gb). We therefore saved our fitted models in the form of RStanArm objects in this link. To reproduce our Bayesian analyses, you may (1) download the folder, unzip it, and insert the Models directory in data folder (i.e., data/Models), (2) run the models yourself by setting the parameter run_models=TRUE in our analysis code. 
+We fit hierarchical Bayesian regression models via the RStanArm package, which under the hood runs multiple independent chains of Hamiltonian Monte Carlo, and logs samples from the posterior distribution over the model parameters. These models may take a few hours to run and their size is considerabely large (>2gb). We therefore saved our fitted models in the form of RStanArm objects in the Open Science Framework page of our preregistered study (https://osf.io/tju7w/). To reproduce our Bayesian analyses, you may (1) download the folder, unzip it, and insert the Models directory in data folder (i.e., data/Models), (2) run the models yourself by setting the parameter run_models=TRUE in our analysis code. 
 The folder also includes Preprocessing_data.Rmd script where we preprocess the data and exclude outlier participants prior to data analysis.   
 
 </span> 
