@@ -2,7 +2,7 @@
 title: "Analysis code"
 subtitle: "How we learn to value the road not taken: Deliberation and memory shape the valuation of unchosen options"
 author: "Natalie Biderman"
-date: "11/09/2020"
+date: "02/16/2021"
 output: 
   html_document:
     #css: Functions/style.css
@@ -47,6 +47,9 @@ source("Functions/modelling.R")
 fig_size = c(10,10)
 fig_type = "png"  # "eps" # or png
 Save_plots <- 1
+point_size <- 4.5
+point_stroke <- 0.6
+line_size <- 1
 
 # Bayesian model params
 options(mc.cores = parallel::detectCores())
@@ -137,6 +140,9 @@ demographics_total %>%
   kbl(caption = "Demographic information") %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
+demos <- subset(all_exps_list$demographics, Exp %in% c("Exp1", "Exp2", "Exp3"))
+#write.csv(demos, "demographics.csv")
+                
 ```
 
 ## Analysis of Experiment 1
@@ -160,9 +166,16 @@ p_gain <- clean_data_Exp1$final_decisions %>%
 
 p_gain_group <- p_gain %>%
   group_by(choice) %>%
-  dplyr::summarize(mean = mean(p_gain, na.rm=1), se = sd(p_gain, na.rm=1)/sqrt(n())) %>%
-  mutate(`p(select rewarded)` = sprintf("%.2f \u00b1 %.2f", mean, se)) %>%
-  dplyr::select(choice, `p(select rewarded)`)
+  dplyr::summarize(mean = mean(p_gain, na.rm=1), 
+                   se = sd(p_gain, na.rm=1)/sqrt(n()),
+                   n = n(),
+                   n_effect = sum(p_gain<0.5),
+                   percent = round(sum(p_gain<0.5)/n()*100)) %>%
+  mutate(`p(select rewarded)` = sprintf("%.2f \u00b1 %.2f", mean, se),
+         n_effect = ifelse(choice=="Chosen", n-n_effect, n_effect),
+         `n effect` = sprintf("%d/%d", n_effect, n),
+         `% effect` = ifelse(choice=="Chosen", 100-percent, percent)) %>%
+  dplyr::select(choice, `p(select rewarded)`, `n effect`, `% effect`)
 
 # print table of group means and 1 sem
 p_gain_group %>%
@@ -210,14 +223,22 @@ outcome_estimation <- clean_data_Exp1$outcome_evaluation %>%
   group_by(PID, choice, reward) %>%
   dplyr::summarise(gain_eval = mean(outcome_eval_gain, na.rm=1),
                    eval_acc = mean(outcome_eval_acc, na.rm=1),
-                   eval_rt = mean(outcome_eval_rt, na.rm=1))
+                   eval_rt = mean(outcome_eval_rt, na.rm=1)) 
 
 outcome_est_group <- outcome_estimation %>%
+  #subset(inverse_strategy==0) %>%
   group_by(choice, reward) %>%
   dplyr::summarise(mean = mean(gain_eval, na.rm=1),
-                   se = sd(gain_eval, na.rm=1)/sqrt(n())) %>%
-  mutate(`p(estimate as rewarded)` = sprintf("%.2f \u00b1 %.2f",mean, se)) %>%
-  dplyr::select(choice,reward,`p(estimate as rewarded)` )
+                   se = sd(gain_eval, na.rm=1)/sqrt(n()),
+                   n = n(),
+                   n_effect = sum(gain_eval<0.5),
+                   percent = round(sum(gain_eval<0.5)/n()*100)) %>%
+  mutate(`p(estimate as rewarded)` = sprintf("%.2f \u00b1 %.2f",mean, se),
+         n_effect = ifelse((reward=="Rewarded" & choice=="Chosen") | (reward=="Unrewarded" & choice=="Unchosen"), 
+                           n-n_effect, n_effect),
+         `n effect` = sprintf("%d/%d", n_effect, n),
+         `% effect` = n_effect/n*100) %>%
+  dplyr::select(choice,reward,`p(estimate as rewarded)`,`n effect`,`% effect`)
 
 # print table
 outcome_est_group %>%
@@ -263,14 +284,64 @@ outcome_est_group_fits %>%
   kbl() %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
+# ==========================================================================
+# Relationship between inverse decision bias and inverse estimation of value
+# ==========================================================================
+
+inverse_decision_estimation <- outcome_estimation %>% 
+  select(-c(eval_acc, eval_rt)) %>%
+  spread(reward, gain_eval) %>%
+  mutate(reward_diff = Rewarded-Unrewarded) %>%
+  merge(p_gain, by=c("PID","choice")) %>%
+  mutate(choice_centered = ifelse(choice=="Chosen", 1, -1),
+         p_gain_centered = p_gain - 0.5)
+
+# ggplot(inverse_decision_estimation, aes(y=p_gain, x=reward_diff)) + 
+#   geom_point() +
+#   stat_smooth(method=lm) +
+#   facet_wrap(.~choice) + 
+#   theme + point_plot_theme + 
+#   geom_hline(yintercept=0, size=1, linetype="dashed") + 
+#   geom_vline(xintercept=0, size=1, linetype="dashed") 
+
+if (run_models==1){
+  M_inverse_decision_estimation <- stan_glm(data = inverse_decision_estimation, 
+                                     p_gain_centered ~ choice_centered * reward_diff,
+                                     family = gaussian(), 
+                                     adapt_delta = params$adapt_delta, 
+                                     iter = params$iterations, 
+                                     chains = params$chains, 
+                                     warmup = params$warmup)
+  save(M_inverse_decision_estimation, file = "../data/Models/Outcome_estimation/M_inverse_decision_estimation.RData")
+} else {
+  load("../data/Models/Outcome_estimation/M_inverse_decision_estimation.RData")
+}
+
+inverse_group_fits <- as.data.frame(M_inverse_decision_estimation) %>%
+  mutate(intercept_chosen = `(Intercept)` + choice_centered,
+         slope_chosen = reward_diff + `choice_centered:reward_diff`,
+         intercept_unchosen = `(Intercept)` - choice_centered,
+         slope_unchosen = reward_diff - `choice_centered:reward_diff`) %>%
+  gather(coef,value) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(value = sprintf("%.2f [%.2f, %.2f]",median, HDI95_low, HDI95_high)) %>%
+  dplyr::select(coef, value)
+
+inverse_group_fits %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
 ```
   
 ### Figure 2
 
 ```{r, figure 2}
 
-linesize <- 0.75
-pointsize <- 4
+linesize <- 1
+pointsize <- 5
 pointstroke <- 0.55
 n_sem <- 1 # how many standard errors do we want the error bars to include?
 
@@ -291,7 +362,7 @@ p1 <- ggplot(bias, aes(x=factor(chosen_trial),y=p_gain)) +
   stat_summary(fun.data=mean_se, fun.args = list(mult=n_sem), geom="errorbar", width=0.1, size=0.9, 
                position=position_nudge(0.2), color="black") + # "turquoise4"
   geom_hline(yintercept=0.5, size=linesize, linetype="dashed") + 
-  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(0,1.05)) + 
+  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(0,1.02)) + 
   theme + 
   theme(axis.title.x=element_blank(), 
         legend.position="none" , 
@@ -398,7 +469,7 @@ p3 <- ggplot(estimates, aes(y = gain_eval, x = choice)) +
   # geom_point(aes(color=reward, x=choice), position=position_jitterdodge(dodge.width=1, jitter.width=0.1, jitter.height=0.01),
   #            shape=21, stroke=pointstroke, size=2, fill="white", alpha=0.5) +
   geom_hline(yintercept=0.5, linetype="dashed", size=linesize) + 
-  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(-0.01,1.05)) + 
+  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(0,1)) + 
   theme + 
   labs(y="p(estimate as S+)", title="Outcome Estimation") +
   theme(
@@ -415,22 +486,111 @@ p3 <- ggplot(estimates, aes(y = gain_eval, x = choice)) +
   scale_x_discrete(breaks = c("Chosen", "Unchosen"),
                    labels = c(expression(S[chosen]), expression(S[unchosen]))) 
 
-p <- plot_grid(p1,p2,p3, 
-               ncol=3, 
-               axis="bt", 
-               align="v", 
-               labels=c("a","b","c"), 
-               label_size = 30, 
+# ===================================================================
+# Panel d: Relationship between decision bias and outcome estimations
+# ===================================================================
+
+# create 95% HDI ribbon for model fits
+inverse_group_fits <- as.data.frame(M_inverse_decision_estimation) %>%
+  mutate(intercept_chosen = `(Intercept)` + choice_centered,
+         slope_chosen = reward_diff + `choice_centered:reward_diff`,
+         intercept_unchosen = `(Intercept)` - choice_centered,
+         slope_unchosen = reward_diff - `choice_centered:reward_diff`)
+
+
+# predict bias for plotting
+n <- 100 # number x values
+# create new data for chosen and unchosen pairs seperately
+conds <- c(1,-1); new_data_list <- list()
+for (i in 1:length(conds)){
+  p_gain_data_cond <- inverse_decision_estimation[inverse_decision_estimation[,"choice_centered"]==conds[i],"reward_diff"]
+  x_steps <- seq(min(p_gain_data_cond,na.rm=1), max(p_gain_data_cond,na.rm=1), length.out = n)
+  new_data_list[[i]] <- data.frame(obs = seq_along(x_steps), x1=conds[i], x2=x_steps)
+  colnames(new_data_list[[i]])[c(2,3)] <- c("choice_centered","reward_diff")
+  names(new_data_list)[i] <- sprintf("cond%d",conds[i])
+}
+# predict y values given the new data
+pred_list <- list()
+for (i in 1:length(new_data_list)){
+  pred_list[[i]] <- posterior_linpred(M_inverse_decision_estimation,newdata = new_data_list[[i]])
+  names(pred_list)[i] <- names(new_data_list)[i]
+}
+# compute summary stats for each x observation
+predicted_summary_list <- list()
+for (c in 1:length(new_data_list)){
+  df_pred <- pred_list[[c]] %>% 
+    as.data.frame %>%
+    setNames(seq_len(ncol(.))) %>% 
+    tibble::rownames_to_column("posterior_sample") %>% 
+    tidyr::gather_("obs", "fitted", setdiff(names(.), "posterior_sample")) %>%
+    group_by(obs) %>% 
+    dplyr::summarise(median = median(fitted),
+                     lower = quantile(fitted, 0.025), 
+                     upper = quantile(fitted, 0.975)) %>%
+    mutate(obs = as.numeric(obs)) %>%
+    left_join(new_data_list[[c]], by="obs") %>% arrange(obs)
+  predicted_summary_list[[c]] <- df_pred; names(predicted_summary_list)[c] <- names(new_data_list)[c]
+}
+predicted_summary <- rbind(predicted_summary_list[[1]],predicted_summary_list[[2]]) %>%
+  mutate(p_gain_centered = median,
+         choice = ifelse(choice_centered == 1, "Chosen", "Unchosen"))
+
+inverse_decision_estimation_text <- as.data.frame(M_inverse_decision_estimation) %>%
+  mutate(Slope_Unchosen = reward_diff - `choice_centered:reward_diff`,
+         Slope_Chosen = reward_diff + `choice_centered:reward_diff`) %>%
+  select(Slope_Chosen,Slope_Unchosen) %>%
+  gather(coef,value) %>%
+  separate(coef, c("coef","choice"), "_") %>%
+  group_by(coef, choice) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(sig = ifelse((median>0 & HDI95_low>0 & HDI95_high>0) | (median<0 & HDI95_low<0 & HDI95_high<0),"*",""),
+         text = sprintf("\u03b2(%s %s):\n%.2f [%.2f, %.2f]%s",coef, choice, median, HDI95_low, HDI95_high,sig)) %>%
+mutate(x = ifelse(choice=="Chosen", 0, -0.5),
+       y = ifelse(choice=="Chosen", -0.2, 0.35))
+
+p4 <- ggplot(subset(inverse_decision_estimation, choice=="Unchosen"), 
+             aes(y=p_gain_centered,x=reward_diff)) + #, color=factor(choice_centered)) + 
+  geom_point(size=point_size, fill="white", shape=21, stroke=point_stroke) + 
+  theme + 
+  point_plot_theme +
+  # geom_ribbon(data = predicted_summary, aes(ymin=lower, ymax=upper, group=choice), fill="#E9E9E9")+
+  # geom_line(aes(y=median, linetype = choice), data=predicted_summary, size=line_size*1.5) + 
+  # scale_linetype_manual(values=c("longdash", "solid")) + 
+  geom_ribbon(data = subset(predicted_summary,choice=="Unchosen"), aes(ymin=lower, ymax=upper), fill="#E9E9E9")+
+  geom_line(data = subset(predicted_summary,choice=="Unchosen"), aes(y=median), size=line_size*1.5) +  
+  geom_hline(yintercept=0, size=line_size, linetype="dashed") + 
+  geom_vline(xintercept=0, size=line_size,  linetype="dashed") +
+  scale_y_continuous(expand=c(0,0),  breaks=c(-0.5,0,0.5), limits=c(-0.55,0.55)) + 
+  scale_x_continuous(expand=c(0,0), breaks=c(-1, 0, 1), limits=c(-1.05, 1.05)) +
+  theme(legend.position="none", plot.title = element_text(margin=margin(0,0,30,0))) + 
+  geom_text(subset(inverse_decision_estimation_text, coef=="Slope" & choice=="Unchosen"), 
+            size=7, 
+            mapping=aes(x=x, y=y, label=text)) + #, group=choice)) +
+  labs(y="p(select S+) - 0.5",
+       x="Inverse estimation score",
+       #x=expression(atop("Inverse estimation score","p(estimate S+ as S+) - p(estimate S0 as S+)")),
+       title="Decision bias and outcome estimations") 
+  # facet_wrap(.~choice, 
+  #            labeller = as_labeller(c("Chosen" = "Chosen pairs", "Unchosen" = "Unchosen pairs")))
+
+p <- plot_grid(p1,p2,p3,p4,
+               ncol=2,nrow=2,
+               axis="bt",
+               align="v",
+               labels=c("a","b","c","d"),
+               label_size = 30,
                label_fontfamily = "Helvetica")
    
-if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure2",fig_type), 
+if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure2_new",fig_type), 
                              plot=p, 
-                             width=fig_size[1]+11,
-                             height=fig_size[2]-3)}
+                             width=fig_size[1]+4,
+                             height=fig_size[2]+4)}
 
 ```
 
-![Figure2. The inferred value of unchosen options is inversely related to the learned value of chosen options (Experiment 1)](../results/Plots/Figure2.png) 
+![Figure2. The inferred value of unchosen options is inversely related to the learned value of chosen options (Experiment 1)](../results/Plots/Figure2_new.png) 
 
 ### Relationship between associative memory and inverse bias
   
@@ -578,10 +738,6 @@ memory_pair_type_model %>%
   
 ```{r, figure 3}
 
-point_size <- 4.5
-point_stroke <- 0.6
-line_size <- 1
-
 # inverse decision bias as a function of pairs memory
 memory_model_text <- coefs_pair_acc_bias_Exp1$posterior_draws_per_cond$no_cond %>%
     gather(coef, value) %>% 
@@ -652,7 +808,274 @@ if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure3"
 ```
   
 ![Figure3. Inverse inference of value is related to associative memory](../results/Plots/Figure3.png)
+
+### Testing whether the results hold when removing explicit strategy participants
+
+```{r, inverse strategy}
+
+# a potential confound of our study is that participants simply inferred that the task design is such that if their choice resulted in a gain, then the unchosen option was probably a loss. In the end of the task we asked participants how they made their choices in unchosen pairs. We now tag the participants who argued for this inference and remove them from analysis to see whetehr the results replicate even without them.
+
+strategy <- clean_data_Exp1$strategies
+# These are the people who explictly mentioned an inverse strategy
+inverse_strategy <- c("1Yu0G", "3PT1e", "6PhdR", "8mjxB", "9Ai4r", "a5b8U", "ADPTy", "aIvIN", "bI48S", "DAt9p", "diiDU", "fl6Ph", "H3ROo", "JeouF", "mEVNr", "n8kIj", "nYFCE", "OAsQd", "oJGUI", "uzP2b", "xvwYZ", "z9lUP")
+
+```
+
+#### Inverse decision bias
+
+```{r, inverse decision bias}
+
+# =====================
+# Inverse decision bias
+# =====================
+
+Exp1_FD_no_strategy <- clean_data_Exp1$final_decisions %>%
+  mutate(inverse_strategy = ifelse(PID %in% inverse_strategy, 1, 0))
+
+Exp1_FD_no_strategy %>%
+  mutate(choice = ifelse(chosen_trial==1, "Chosen", "Unchosen")) %>%
+  group_by(PID, inverse_strategy, choice) %>% 
+  dplyr::summarize(p_gain = mean(higher_outcome_chosen, na.rm=1)) %>%
+  group_by(inverse_strategy, choice) %>%
+  dplyr::summarize(mean = mean(p_gain, na.rm=1), 
+                   se = sd(p_gain, na.rm=1)/sqrt(n()),
+                   n = n(),
+                   n_effect = sum(p_gain<0.5),
+                   percent = round(sum(p_gain<0.5)/n()*100)) %>%
+  mutate(`p(select rewarded)` = sprintf("%.2f \u00b1 %.2f", mean, se),
+         n_effect = ifelse(choice=="Chosen", n-n_effect, n_effect),
+         `n effect` = sprintf("%d/%d", n_effect, n),
+         `% effect` = ifelse(choice=="Chosen", 100-percent, percent),
+         `reported strategy` = ifelse(inverse_strategy==1, "Inverse strategy","No inverse strategy")) %>%
+  ungroup(inverse_strategy) %>%
+  dplyr::select(`reported strategy`, choice, `p(select rewarded)`, `n effect`, `% effect`) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+if (run_models==1){
+  # run model and use function to rearrange the coefficients
+  M_Exp1_choice_ratings_no_strategy <- run_choice_ratings_model(
+    subset(Exp1_FD_no_strategy, !is.na(left_chosen) & inverse_strategy==0),c(),params,"Exp1")
+  coef_list_Exp1_no_strategy <- create_choice_ratings_coef_list(M_Exp1_choice_ratings_no_strategy, "Exp1", "Pairs")
+} else {
+  load("../data/Models/Strategy_analysis/coef_list_Exp1_no_strategy.RData")
+}
+
+coef_list_Exp1_no_strategy$summary_group_coefs %>%
+    mutate(sig = ifelse((Median>0 & low95HDI>0 & high95HDI>0) | 
+                          (Median<0 & low95HDI<0 & high95HDI<0),"*",""),
+           value = sprintf("%.2f [%.2f, %.2f]%s",Median, low95HDI, high95HDI, sig)) %>%
+    dplyr::select(coef, value) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
+
+#### Outcome Estimation
+
+```{r, outcome estimation}
+
+# ==================
+# Outcome Estimation
+# ==================
+
+outcome_estimation %>%
+  mutate(inverse_strategy = ifelse(PID %in% inverse_strategy, 1, 0)) %>%
+  group_by(inverse_strategy, choice, reward) %>%
+  dplyr::summarise(mean = mean(gain_eval, na.rm=1),
+                   se = sd(gain_eval, na.rm=1)/sqrt(n()),
+                   n = n(),
+                   n_effect = sum(gain_eval<0.5),
+                   percent = round(sum(gain_eval<0.5)/n()*100,1)) %>%
+  mutate(`p(estimate as rewarded)` = sprintf("%.2f \u00b1 %.2f",mean, se),
+         n_effect = ifelse((reward=="Rewarded" & choice=="Chosen") | (reward=="Unrewarded" & choice=="Unchosen"), 
+                           n-n_effect, n_effect),
+         `n effect` = sprintf("%d/%d", n_effect, n),
+         `% effect` = sprintf("%.f",n_effect/n*100),
+          `reported strategy` = ifelse(inverse_strategy==1, "Inverse strategy","No inverse strategy")) %>%
+  ungroup(inverse_strategy) %>%
+  dplyr::select(`reported strategy`,choice,reward,`p(estimate as rewarded)`,`n effect`,`% effect`) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+# ===============================================
+# Model estimations as a function of outcome type 
+# ===============================================
+
+if (run_models==1){
+  clean_data_Exp1$outcome_evaluation <- mutate(clean_data_Exp1$outcome_evaluation,
+                                             chosen_obj_centered = ifelse(chosen_obj==0,-1,1),
+                                             inverse_strategy = ifelse(PID %in% inverse_strategy, 1, 0))
   
+  M_outcome_estimation_no_strategy <- stan_glmer(data = subset(clean_data_Exp1$outcome_evaluation,
+                                                               inverse_strategy==0), 
+                                     outcome_eval_gain ~ chosen_obj_centered * reward_type + 
+                                       (chosen_obj_centered * reward_type | PID),
+                                     family = binomial(link="logit"), 
+                                     adapt_delta = params$adapt_delta, 
+                                     iter = params$iterations, 
+                                     chains = params$chains, 
+                                     warmup = params$warmup)
+  save(M_outcome_estimation_no_strategy, file = "../data/Models/Strategy_analysis/M_outcome_estimation_no_strategy.RData")
+} else {
+  load("../data/Models/Strategy_analysis/M_outcome_estimation_no_strategy.RData")
+}
+
+# Rearrange model coefficients to get coefficients of interest
+model_posterior <- as.data.frame(M_outcome_estimation_no_strategy)
+model_posterior[,!str_detect(colnames(model_posterior),"PID")] %>%
+  mutate(gain_chosen = `(Intercept)` + chosen_obj_centered + reward_type + `chosen_obj_centered:reward_type`,
+         no_gain_chosen = `(Intercept)` + chosen_obj_centered - reward_type - `chosen_obj_centered:reward_type`,
+         gain_unchosen = `(Intercept)` - chosen_obj_centered + reward_type - `chosen_obj_centered:reward_type`,
+         no_gain_unchosen = `(Intercept)` - chosen_obj_centered - reward_type + `chosen_obj_centered:reward_type`) %>%
+  gather(coef,value) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(value = sprintf("%.2f [%.2f, %.2f]",median, HDI95_low, HDI95_high)) %>%
+  dplyr::select(coef, value) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
+
+#### Relationship between inverse decision bias and inverse estimation of value
+
+```{r, estimation vs decisions}
+# ==========================================================================
+# Relationship between inverse decision bias and inverse estimation of value
+# ==========================================================================
+
+outcome_estimation <- outcome_estimation %>%
+  mutate(inverse_strategy = ifelse(PID %in% inverse_strategy, 1, 0))
+
+inverse_decision_estimation_no_strategy <- subset(outcome_estimation,inverse_strategy==0) %>% 
+  select(-c(eval_acc, eval_rt)) %>%
+  spread(reward, gain_eval) %>%
+  mutate(reward_diff = Rewarded-Unrewarded) %>%
+  merge(p_gain, by=c("PID","choice")) %>%
+  mutate(choice_centered = ifelse(choice=="Chosen", 1, -1),
+         p_gain_centered = p_gain - 0.5)
+
+if (run_models==1){
+  M_inverse_decision_estimation_no_strategy <- 
+    stan_glm(data = inverse_decision_estimation_no_strategy, 
+             p_gain_centered ~ choice_centered * reward_diff,
+             family = gaussian(), 
+             adapt_delta = params$adapt_delta, 
+             iter = params$iterations, 
+             chains = params$chains, 
+             warmup = params$warmup)
+  save(M_inverse_decision_estimation_no_strategy, file = "../data/Models/Strategy_analysis/M_inverse_decision_estimation_no_strategy.RData")
+} else {
+  load("../data/Models/Strategy_analysis/M_inverse_decision_estimation_no_strategy.RData")
+}
+
+as.data.frame(M_inverse_decision_estimation_no_strategy) %>%
+  mutate(intercept_chosen = `(Intercept)` + choice_centered,
+         slope_chosen = reward_diff + `choice_centered:reward_diff`,
+         intercept_unchosen = `(Intercept)` - choice_centered,
+         slope_unchosen = reward_diff - `choice_centered:reward_diff`) %>%
+  gather(coef,value) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(value = sprintf("%.2f [%.2f, %.2f]",median, HDI95_low, HDI95_high)) %>%
+  dplyr::select(coef, value) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
+
+#### Relationship between inverse decision bias and associative memory - between participants
+
+```{r, decision bias and memory1}
+
+# ========================================================================================
+# Relationship between inverse decision bias and associative memory - between participants
+# ========================================================================================
+
+  # Model inverse decision bias and pairs memory
+if (run_models==1){
+  coefs_pair_acc_bias_Exp1_no_strategy <-
+  run_bias_memory_model(subset(Exp1_FD_no_strategy, inverse_strategy==0),
+                        "pair_acc",c(),params,"Exp1_no_strategy")
+  load("../data/Models/Memory_Bias/Between_subs/Model_objects/M_Exp1_no_strategy_memory_bias.RData")
+  } else {
+  load("../data/Models/Strategy_analysis/M_Exp1_no_strategy_memory_bias.RData")
+  load("../data/Models/Strategy_analysis/coefs_pair_acc_bias_Exp1_no_strategy.RData")
+}
+
+# Present model coefs
+as.data.frame(M_Exp1_no_strategy_memory_bias) %>%
+  gather(coef, value, `(Intercept)`:sigma) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(value = sprintf("%.2f [%.2f, %.2f]",median, HDI95_low, HDI95_high)) %>%
+  dplyr::select(coef, value) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
+
+#### Relationship between inverse decision bias and associative memory - within participants
+
+```{r, decision bias and memory2}
+
+# =======================================================================================
+# Relationship between inverse decision bias and associative memory - within participants
+# =======================================================================================
+
+memory_per_deliberation_subs_no_strategy <- memory_per_deliberation_subs %>%
+  mutate(inverse_strategy = ifelse(PID %in% inverse_strategy,"Inverse strategy","No inverse startegy"))
+
+memory_per_deliberation_subs_no_strategy %>%
+  group_by(inverse_strategy, pair_type_cond) %>%
+  dplyr::summarize(mean = mean(pair_acc),
+                   se = sd(pair_acc)/sqrt(n())) %>%
+  mutate(`pair memory accuracy` = sprintf("%.2f \u00b1 %.2f",mean, se)) %>%
+  dplyr::rename(`condition type` = pair_type_cond,
+                `reported strategy` = inverse_strategy) %>%
+  dplyr::select(`reported strategy`, `condition type`, `pair memory accuracy`) %>% 
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+# Model the effect
+memory_per_deliberation_no_strategy <- memory_per_deliberation %>%
+  mutate(inverse_strategy = ifelse(PID %in% inverse_strategy,1,0))
+
+if (run_models==1){
+  M_memory_per_deliberation_Exp1_no_strategy <- stan_glmer(
+    data = subset(memory_per_deliberation_no_strategy, inverse_strategy==0),
+                          pair_acc ~ pair_type_centered + (pair_type_centered | PID),
+                          family = binomial(link="logit"), 
+                          adapt_delta = params$adapt_delta, 
+                          iter = params$iterations, 
+                          chains = params$chains, 
+                          warmup = params$warmup)
+  save(M_memory_per_deliberation_Exp1_no_strategy, 
+       file = "../data/Models/Strategy_analysis/M_memory_per_deliberation_Exp1_no_strategy.RData")
+} else {
+  load("../data/Models/Strategy_analysis/M_memory_per_deliberation_Exp1_no_strategy.RData")
+}
+
+# Present model coefs
+as.data.frame(M_memory_per_deliberation_Exp1_no_strategy) %>%
+  gather(coef, value, `(Intercept)`:pair_type_centered) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(value = sprintf("%.2f [%.2f, %.2f]",median, HDI95_low, HDI95_high)) %>%
+  dplyr::select(coef,value) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
 
 ### Figure 4: decision bias and memory correlations across all data sets 
   
@@ -824,7 +1247,6 @@ if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure4"
   
 ![Figure4. Main findings were replicated across five distinct data sets](../results/Plots/Figure4.png)
 
-
 ### Power analysis for Experiment 1 based on Pilot study 
 
 ```{r}
@@ -876,7 +1298,20 @@ power_pilot %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
 ```
-  
+
+### Consistency in Deliberation phase
+
+```{r}
+
+clean_data_Exp1$deliberation %>%
+  mutate(choice_consistency = choice_consistency + 1) %>% # we add 1 because we computed how many times the same decision was made before the last block, but a better measure is how many times the decision was repeated (so we need to add the last block to the computation)
+  group_by(PID) %>%
+  dplyr::summarise(cons_mean = mean(choice_consistency, na.rm=1)) %>%
+  dplyr::summarise(mean = mean(cons_mean, na.rm=1),
+                   sd = sd(cons_mean, na.rm=1),
+                   se = sd(cons_mean, na.rm=1)/sqrt(n()))
+
+```
 
 ## Supplementary Material analyses
   
@@ -1413,156 +1848,3 @@ unchosen_intercept_diffs_Exp4 %>%
 
 ```
 
-### Supplemetaty Text 3: Analysis of ratings change 
-
-```{r, supplementary text 3}
-
-# ===============
-# Behavioral data 
-# ===============
-
-# Merge data from three experiments
-final_ratings <- all_exps_list$final_ratings %>%
-  mutate(choice = ifelse(chosen_obj==1, "Schosen", "Sunchosen"),
-         reward = ifelse(reward_type==1, "S+", "S0"),
-         cond_logical = ifelse(repeat_cond==1 & Exp=="Exp2" | reward_cond==1 & Exp=="Exp3", 1, 0),
-         norm_rating_diff_per_test = normalized_new_rating - normalized_initial_rating,
-         Exp = case_when(Exp=="Exp1" ~ "Experiment 1",
-                         Exp=="Exp2" ~ "Experiment 2",
-                         Exp=="Exp3" ~ "Experiment 3"))
-
-# Summarize mean rating difference for each participant by condition (choice & reward)
-preference_change_means <- subset(final_ratings, deliberated_stim==1) %>%
-  group_by(Exp, PID, choice, reward) %>%
-  dplyr::summarize(diff_ratings = mean(diff_norm_rating, na.rm=1)) 
-
-# ================
-# Model the effect
-# ================
-
-if (run_models==1){
-  # run models for all experiments 
-  M_Exp1_preference_change <- run_preference_change_model(
-    subset(clean_data_Exp1$final_ratings, deliberated_stim==1) %>%
-      mutate(chosen_obj_centered = ifelse(chosen_obj==1,1,-1)), 
-    c(),params,"Exp1")
-  M_Exp2_preference_change <- run_preference_change_model(
-    clean_data_Exp2$final_ratings %>% 
-      subset(deliberated_stim==1) %>%
-      mutate(repeat_cond_centered = ifelse(repeat_cond==1, 1, -1),
-             chosen_obj_centered = ifelse(chosen_obj==1,1,-1)),
-    "repeat_cond_centered",params,"Exp2")
-  M_Exp3_preference_change <- run_preference_change_model(
-    subset(clean_data_Exp3$final_ratings, deliberated_stim==1) %>%
-      mutate(chosen_obj_centered = ifelse(chosen_obj==1,1,-1)),
-    "reward_cond",params,"Exp3")
-} else {
-  load("../data/Models/Supplementary_analyses/Preference_change/M_Exp1_preference_change.RData")
-  load("../data/Models/Supplementary_analyses/Preference_change/M_Exp2_preference_change.RData")
-  load("../data/Models/Supplementary_analyses/Preference_change/M_Exp3_preference_change.RData")
-}
-
-# ===============================================================
-# Compute model coefficients per each condition (reward x choice)
-# ===============================================================
-
-# Model coefficients
-rearrange_coefs_preference_change <- function(model_object, Exp_name){
-  model_posterior <- as.data.frame(model_object)
-  coefs_ratings <- model_posterior[,!str_detect(colnames(model_posterior),"PID")] %>%
-    mutate(chosen_rewarded = `(Intercept)` + reward_type + chosen_obj_centered + `reward_type:chosen_obj_centered`,
-           chosen_unrewarded = `(Intercept)` - reward_type + chosen_obj_centered - `reward_type:chosen_obj_centered`,
-           unchosen_rewarded = `(Intercept)` + reward_type - chosen_obj_centered - `reward_type:chosen_obj_centered`,
-           unchosen_unrewarded = `(Intercept)` - reward_type - chosen_obj_centered + `reward_type:chosen_obj_centered`,
-           chosen_diff_reward = chosen_rewarded - chosen_unrewarded,
-           unchosen_diff_reward = unchosen_rewarded - unchosen_unrewarded) %>%
-    gather(coef,value) %>%
-    group_by(coef) %>%
-    dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
-                     HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
-                     median = median(value)) %>%
-    mutate(sig = ifelse((HDI95_low>0 & HDI95_high>0) | (HDI95_low<0 & HDI95_high<0),"*",""),
-           text = sprintf("%.2f [%.2f, %.2f]%s",median, HDI95_low, HDI95_high, sig),
-           Exp = Exp_name)
-    
-  return(coefs_ratings)
-}
-
-coefs_preference_change <- bind_rows(rearrange_coefs_preference_change(M_Exp1_preference_change, "Experiment 1"),
-                                     rearrange_coefs_preference_change(M_Exp2_preference_change, "Experiment 2"),
-                                     rearrange_coefs_preference_change(M_Exp3_preference_change, "Experiment 3")) %>%
-  subset(coef %in% c("chosen_rewarded", "chosen_unrewarded", "unchosen_rewarded", "unchosen_unrewarded", "chosen_diff_reward", "unchosen_diff_reward"))
-
-# ================================================
-# Create a table with means and model coefficients
-# ================================================
-
-# Behavioral means
-preference_change_means_table <- preference_change_means %>%
-  spread(reward, diff_ratings) %>%
-  mutate(`S+ - S0` = `S+` - S0) %>%
-  gather(Reward, value, `S+`:`S+ - S0`) %>%
-  group_by(Exp, choice, Reward) %>%
-  dplyr::summarise(mean = mean(value, na.rm=1),
-                   se = sd(value, na.rm=1)/sqrt(n())) %>%
-  mutate(text = sprintf("%.2f \u00b1 %.2f",mean, se)) %>%
-  dplyr::select(-c(mean, se)) %>%
-  spread(choice, text) %>%
-  dplyr::rename(`Schosen (behavior)` = Schosen, `Sunchosen (behavior)` = Sunchosen)
-
-preference_change_coefs_table <- coefs_preference_change %>%
-  mutate(choice = ifelse(str_detect(coef,"unchosen"), "Sunchosen (coefs)", "Schosen (coefs)"),
-         Reward = ifelse(str_detect(coef,"diff"), "S+ - S0",
-                              ifelse(str_detect(coef,"unrewarded"), "S0", "S+"))) %>%
-  dplyr::select(Exp, choice, Reward, text) %>%
-  spread(choice, text)
-
-preference_change_table <- merge(preference_change_means_table, preference_change_coefs_table, by=c("Exp", "Reward")) %>%
-  mutate(Reward = factor(Reward, levels=c("S+","S0", "S+ - S0"))) %>%
-  arrange(Exp, Reward)
-
-preference_change_table %>%
-  kbl(caption = "Supplementary Table 6. Ratings change effects in Experiments 1 to 3") %>%
-  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
-
-```
-
-#### Supplementary Figure 2
-
-```{r, supp figure 2}
-
-p <- ggplot(preference_change_means, aes(y = diff_ratings, x = choice)) +
-  stat_summary_bin(aes(y=diff_ratings, fill=reward), fun.y="mean", geom="bar", binwidth=0.2,
-                   position=position_dodge(width=1)) +
-  geom_point(aes(color=reward), position=position_jitterdodge(dodge.width=1, jitter.width=0.1), 
-             fill="white", shape=21, stroke=0.5, size=1) +
-  stat_summary(aes(group=reward, color=reward, x=as.numeric(as.factor(choice))+0.13), 
-               fun.data=mean_se, fun.args = list(mult=1), 
-               geom="errorbar", width=0.2, size=0.9, position=position_dodge(width=1)) + 
-  geom_hline(yintercept=0, size=1) + 
-  theme + 
-  labs(y="Difference in normalaized ratings\n(final - initial)", title="Changes in subjective ratings") + 
-  theme(
-    legend.position = c(.228, .95),
-    legend.justification = c("right", "top"),
-    legend.box.just = "right",
-    legend.direction = "horizontal",
-    legend.margin = margin(6, 6, 6, 6),
-    legend.text=element_text(size=16),
-    axis.title.x=element_blank(), 
-    aspect.ratio=5/3,
-    plot.title = element_text(margin=margin(0,0,30,0), hjust = 0.5, size = 22, face = "plain"),
-    strip.background = element_blank(),
-    strip.text.x = element_text(size = 20)) +
-    scale_color_manual(values=c("#36875F", "#B34E00")) + 
-  scale_fill_manual(values=c("#54B082", "#D55E00")) + 
-  facet_wrap(.~Exp)
-
-if (Save_plots==1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Supp_Figure2",fig_type), 
-       plot=p, 
-       width=fig_size[1]+2,
-       height=fig_size[2]-2)}
-
-```
-
-![Supplementary Figure 2. Change in subjective ratings in Experiments 1 to 3](../results/Plots/Supp_Figure2.png)
