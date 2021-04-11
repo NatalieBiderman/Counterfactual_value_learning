@@ -45,7 +45,7 @@ source("Functions/modelling.R")
 
 # Figure parameters
 fig_size = c(10,10)
-fig_type = "png"  # "eps" # or png
+fig_type = "eps"  # "eps" # or png
 Save_plots <- 1
 point_size <- 4.5
 point_stroke <- 0.6
@@ -206,7 +206,244 @@ coefs %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
 ```
+
+### RT analysis in Final Decisions phase
+
+#### RT predicting choices
+In this anaysis we assess whether RTs relate to choices in the Final Decisions phase. We follow previous reseach showing that approach toward reward is faster than avoidanc from loss, and so we expect participants to be faster when they choose the more valuable painting. To test this, we run a model predicting the probability to select a rewarded item as a function of pair type (chosen vs. unchosen) and reaction times. We can then rearrange the model coefficients to get an estimate of the effect of RT for chosen and unchosen pairs seperately (the slope term). 
   
+  
+```{r, rt final decisions}
+
+# ========================================
+# RT avreages in chosen and unchosen pairs
+# ========================================
+
+RT_FD <- clean_data_Exp1$final_decisions %>%
+  mutate(`Pair type` = ifelse(chosen_trial==1, "Chosen pairs", "Unchosen pairs")) %>%
+  group_by(PID, `Pair type`) %>%
+  dplyr::summarise(rt = mean(rt, na.rm=1)) 
+
+# show group means 
+RT_FD %>%
+  group_by(`Pair type`) %>%
+  dplyr::summarise(mean = mean(rt),
+                   se = sd(rt)/sqrt(n())) %>%
+  mutate(RT = sprintf("%.2f \u00b1 %.2f", mean, se)) %>%
+  select(`Pair type`, RT) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+# =================================================
+# p(gain) as a function of zscored RT and pair type
+# =================================================
+
+# zscore rt
+clean_data_Exp1$final_decisions <- clean_data_Exp1$final_decisions %>%
+  group_by(PID) %>%
+  mutate(zscored_rt = zscore(rt, na.rm=1))
+
+# run model 
+if (run_models==1){
+  # run model and use function to rearrange the coefficients
+  M_zscored_RT_FD <- stan_glmer(data=subset(clean_data_Exp1$final_decisions, !is.na(left_chosen)),
+                                higher_outcome_chosen ~ chosen_trial_centered*zscored_rt + 
+                                  (chosen_trial_centered*zscored_rt | PID),
+                                family = binomial(link="logit"),
+                                adapt_delta = params$adapt_delta,
+                                iter = params$iterations,
+                                chains = params$chains,
+                                warmup = params$warmup)
+} else {
+  load("../data/Models/RT_final_decisions/M_zscored_RT_FD.RData")
+}
+
+# compute median and 95% HDIs of coefs
+M_bias_zscored_rt <- as.data.frame(M_zscored_RT_FD) %>%
+  mutate(intercept_chosen = `(Intercept)` + chosen_trial_centered,
+         slope_chosen = zscored_rt + `chosen_trial_centered:zscored_rt`,
+         intercept_unchosen = `(Intercept)` - chosen_trial_centered,
+         slope_unchosen = zscored_rt - `chosen_trial_centered:zscored_rt`)
+M_bias_zscored_rt_posterior <- M_bias_zscored_rt[,!str_detect(colnames(M_bias_zscored_rt),"PID")] %>%
+  gather(coef,value) %>%
+  mutate(coef = factor(coef, 
+                       levels = c("(Intercept)", "chosen_trial_centered", "zscored_rt", "chosen_trial_centered:zscored_rt",
+                                  "intercept_chosen","slope_chosen","intercept_unchosen","slope_unchosen"))) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(sig = ifelse((median>0 & HDI95_low>0 & HDI95_high>0) | 
+                          (median<0 & HDI95_low<0 & HDI95_high<0),"*",""),
+         value = sprintf("%.2f [%.2f, %.2f]%s",median, HDI95_low, HDI95_high, sig)) %>%
+  dplyr::select(coef, value)
+
+# print table of coefs
+print('Model coefficients in a model including zscored RT')
+M_bias_zscored_rt_posterior %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+# =========================================
+# p(gain) as a function of RT and pair type
+# =========================================
+
+# we run the same model with raw RT to make sure the results are not modulated by the normalization of RT. 
+
+# run model 
+if (run_models==1){
+  # run model and use function to rearrange the coefficients
+  M_RT_FD <- stan_glmer(data=subset(clean_data_Exp1$final_decisions, !is.na(left_chosen)),
+                        higher_outcome_chosen ~ chosen_trial_centered*zscored_rt + 
+                          (chosen_trial_centered*zscored_rt | PID),
+                        family = binomial(link="logit"),
+                        adapt_delta = params$adapt_delta,
+                        iter = params$iterations,
+                        chains = params$chains,
+                        warmup = params$warmup)
+} else {
+  load("../data/Models/RT_final_decisions/M_RT_FD.RData")
+}
+
+# compute median and 95% HDIs of coefs
+M_bias_rt <- as.data.frame(M_RT_FD) %>%
+  mutate(intercept_chosen = `(Intercept)` + chosen_trial_centered,
+         slope_chosen = rt + `chosen_trial_centered:rt`,
+         intercept_unchosen = `(Intercept)` - chosen_trial_centered,
+         slope_unchosen = rt - `chosen_trial_centered:rt`)
+M_bias_rt_posterior <- M_bias_rt[,!str_detect(colnames(M_bias_rt),"PID")] %>%
+  gather(coef,value) %>%
+  mutate(coef = factor(coef, 
+                       levels = c("(Intercept)", "chosen_trial_centered", "rt", "chosen_trial_centered:rt",
+                                  "intercept_chosen","slope_chosen","intercept_unchosen","slope_unchosen"))) %>%
+  group_by(coef) %>%
+  dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
+                   HDI95_high = posterior_interval(as.matrix(value), prob=0.95)[2],
+                   median = median(value)) %>%
+  mutate(sig = ifelse((median>0 & HDI95_low>0 & HDI95_high>0) | 
+                          (median<0 & HDI95_low<0 & HDI95_high<0),"*",""),
+         value = sprintf("%.2f [%.2f, %.2f]%s",median, HDI95_low, HDI95_high, sig)) %>%
+  dplyr::select(coef, value)
+
+# print table of coefs
+print('Model coefficients in a model including RT (to make sure the resules are not modulated by the normalization of RT)')
+M_bias_rt_posterior %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+# ====================================
+# plot models for Supplementary Text 1
+# ====================================
+
+# we create 100 fake x values (zscored RTs), and for each we will predict the y values of every draw from the posterior distributions. We do that for every condition (chosen vs. unchosen pairs) seperately using their rearranged coefs (e.g., the chosen intercept and chosen slope)
+
+n <- 1000 # number x values
+x_steps <- seq(-5, 5, length.out = n)
+
+# create new data for chosen and unchosen pairs seperately
+model_sims <- M_bias_zscored_rt[,c("intercept_chosen", "slope_chosen","intercept_unchosen","slope_unchosen")]
+pred_fake_chosen <- as.data.frame(matrix(0,nrow=nrow(model_sims),ncol=n))
+pred_fake_unchosen <- as.data.frame(matrix(0,nrow=nrow(model_sims),ncol=n))
+for (x in 1:n){
+  pred_fake_chosen[,x] <- invlogit(model_sims["intercept_chosen"]+ model_sims["slope_chosen"]*x_steps[x])
+  pred_fake_unchosen[,x] <- invlogit(model_sims["intercept_unchosen"]+ model_sims["slope_unchosen"]*x_steps[x])
+}
+pred_list <- list(pred_fake_chosen, pred_fake_unchosen)
+names_conds <- c("chosen", "unchosen")
+
+# compute summary stats for each x observation
+predicted_summary_list <- list()
+df_x <- data.frame(obs = 1:n, x = x_steps) 
+
+for (c in 1:length(pred_list)){
+  df_pred <- pred_list[[c]] %>% 
+    as.data.frame %>%
+    setNames(seq_len(ncol(.))) %>% 
+    tibble::rownames_to_column("posterior_sample") %>% 
+    tidyr::gather_("obs", "fitted", setdiff(names(.), "posterior_sample")) %>%
+    group_by(obs) %>% 
+    dplyr::summarise(median = median(fitted),
+                     lower = quantile(fitted, 0.025), 
+                     upper = quantile(fitted, 0.975)) %>%
+    mutate(obs = as.numeric(obs)) %>%
+    left_join(df_x, by="obs") %>% arrange(obs)
+  predicted_summary_list[[c]] <- df_pred; names(predicted_summary_list)[c] <- names_conds[c]
+}
+
+# line fits
+predicted_draws <- data.frame(predicted_summary_list[[1]]) %>% 
+  mutate(choice = "Chosen pairs") %>%
+  rbind(mutate(data.frame(predicted_summary_list[[2]]),
+               choice = "Unchosen pairs")) 
+
+# model text
+rt_model_text <- M_bias_zscored_rt_posterior[M_bias_zscored_rt_posterior$coef %in% c("slope_chosen", "slope_unchosen"),] %>%
+  mutate(choice = ifelse(coef=="slope_chosen", "Chosen", "Unchosen"),
+         x = ifelse(coef=="slope_chosen", -2.5, 2.5),
+         y = ifelse(coef=="slope_chosen", 0.8, 0.2),
+         text = sprintf("\u03b2(%s Slope):\n%s",choice, value)) %>%
+  select(-c(coef,value))
+
+# assign fig parameters
+linesize <- 1
+pointsize <- 5
+pointstroke <- 0.55
+n_sem <- 1 # how many standard errors do we want the error bars to include?
+
+# RT in chosen and unchosen pairs
+p1 <- ggplot(RT_FD %>% 
+               mutate(condition=NaN, choice=ifelse(`Pair type`=="Chosen pairs", "Chosen", "Unchosen")), 
+             aes(x=choice,y=rt)) +
+  stat_summary_bin(aes(y=rt), fun.y="mean", geom="bar", binwidth=0.2, 
+                   position=position_dodge(width=1), fill="grey") +
+  geom_point(aes(color=factor(condition)), position=position_jitterdodge(dodge.width=1, jitter.width=0.1), 
+             fill="white", shape=21, stroke=point_stroke, size=point_size) +
+  scale_color_manual(values="black") + 
+  stat_summary(fun.data=mean_se, fun.args = list(mult=n_sem), geom="errorbar",  width=0.1, size=1, 
+               position=position_nudge(0.2), color="black") + 
+  theme + 
+  scale_y_continuous(expand=c(0,0), limits=c(0, max(RT_FD$rt + 0.1)), breaks=c(0,0.5,1, 1.5)) + 
+  theme(legend.position="none", 
+        aspect.ratio=3/2,
+        plot.title = element_text(margin=margin(0,0,30,0))) +
+  labs(x = "Pair type", 
+       y="Reaction times (sec)", 
+       title="RT in Final Decisions")
+
+# model fit
+p2 <- ggplot(predicted_draws, aes(y=median,x=x,group=choice)) +
+  geom_ribbon(aes(ymin=lower, ymax=upper), fill="#E9E9E9") + 
+  geom_line(aes(y=median, linetype=choice), colour="black", size=linesize*1.5) +  
+  geom_hline(yintercept=0.5, size=linesize, linetype="dashed") + 
+  geom_vline(xintercept=0, size=linesize, linetype="dashed") +
+  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(0,1.025)) + 
+  scale_x_continuous(expand=c(0,0)) +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  theme + point_plot_theme + 
+  theme(legend.position="none",
+        plot.title = element_text(margin=margin(0,0,30,0))) + 
+  geom_text(rt_model_text,mapping=aes(x=x, y=y, group=choice, label=text), size=7) +
+  labs(y="Predicted p(select S+)", 
+       x="Reaction times (z-scored)",
+       title="Choices and RTs in Final Decisions") 
+
+p <- plot_grid(p1,p2,
+               ncol=2,
+               axis="bt",
+               align="v", 
+               labels=c("a","b"), 
+               label_size = 30, 
+               label_fontfamily = "Helvetica",
+               rel_widths = c(0.8,1))
+
+
+if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure_RT",fig_type), 
+                             plot=p, 
+                             width=fig_size[1]+4,
+                             height=fig_size[2]-2)}
+
+```
+
 ### Outcome Estimation phase
 
 Here we present the tendency to estimate items as rewarded ones as a fucntion of choice (chosen vs. unchosen items) and actual given reward (rewarded vs. unrewarded, for unchosen items, this is the outcome of their chosen counterpart).  
@@ -465,11 +702,14 @@ p3 <- ggplot(estimates, aes(y = gain_eval, x = choice)) +
   stat_summary(aes(color=reward, x=choice), 
                fun.data=mean_se, fun.args = list(mult=1), 
                geom="errorbar", width=0.2, size=0.9, position=position_dodge(width=1)) + 
-  # geom_beeswarm(aes(color=reward, x=choice), dodge.width=1, fill = "white", size=0.5,priority='descending') +
-  # geom_point(aes(color=reward, x=choice), position=position_jitterdodge(dodge.width=1, jitter.width=0.1, jitter.height=0.01),
-  #            shape=21, stroke=pointstroke, size=2, fill="white", alpha=0.5) +
+  # geom_point(aes(color=reward, x=choice),
+  #            position=position_jitterdodge(dodge.width=1, jitter.width=0.1, jitter.height=0.01),
+  #            shape=21, stroke=pointstroke, size=1.4, fill="white", alpha=0.95) +
+  geom_point(aes(color=reward, x=choice),
+             position=position_jitterdodge(dodge.width=1, jitter.width=0.1, jitter.height=0.01),
+             shape=21, stroke=pointstroke, size=2, fill="white") +
   geom_hline(yintercept=0.5, linetype="dashed", size=linesize) + 
-  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(0,1)) + 
+  scale_y_continuous(expand=c(0,0), breaks=c(0,0.5,1), limits=c(-0.03,1.05)) + 
   theme + 
   labs(y="p(estimate as S+)", title="Outcome Estimation") +
   theme(
@@ -481,7 +721,8 @@ p3 <- ggplot(estimates, aes(y = gain_eval, x = choice)) +
     axis.title.x=element_blank(), 
     aspect.ratio=2.2/2,
     plot.title = element_text(margin=margin(0,0,30,0))) +
-  scale_color_manual(values=c("#B34E00", "#36875F")) + 
+  #scale_color_manual(values=c("#B34E00", "#36875F")) +
+  scale_color_manual(values=c("#9E4908", "#246B47")) + 
   scale_fill_manual(values=c("#D55E00","#54B082")) + 
   scale_x_discrete(breaks = c("Chosen", "Unchosen"),
                    labels = c(expression(S[chosen]), expression(S[unchosen]))) 
@@ -1315,12 +1556,17 @@ clean_data_Exp1$deliberation %>%
 
 ## Supplementary Material analyses
   
-### Supplementary Text 2
-  
-#### Supplementary Figure 1
+### Supplementary Figure 1
 
-![Supplementary Figure 1. Experimental manipulations of the deliberation phase in Experiment 2 to 4](../results/Plots/Supp_Figure1.png)
+![Supplementary Figure 1. Reaction times in Final Decisions phase](../results/Plots/Figure_RT.png)  
   
+
+### Supplementary Figure 2
+
+![Supplementary Figure 2. Experimental manipulations of the deliberation phase in Experiment 2 to 4](../results/Plots/Supp_Figure1.png)
+  
+### Supplementary Tablels
+
 #### Tables with data from Experiments 2 to 4
 
 Here we present tabels with behavioral data as well as regression cofficients of several models across all our experiments.  
@@ -1582,6 +1828,8 @@ pair_acc_fits %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left") 
 
 ```
+
+### Supplementary Text 2
 
 #### Analyzing Experiment 2 (low vs. high repetition of deliberation pairs)
 
@@ -1847,4 +2095,3 @@ unchosen_intercept_diffs_Exp4 %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
 ```
-

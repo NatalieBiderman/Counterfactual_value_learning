@@ -143,6 +143,43 @@ create_choice_ratings_coef_list <- function(model_object, Exp, cond_names){
   return(coefs_list)
 }
 
+# -------------------------------------------------------------------
+# Normalized RT ~ pair type * choice type - Final Decisions phase
+# -------------------------------------------------------------------
+
+run_rt_choice_pair_model <- function(data,dependent_measure,third_predictor,params,Exp){
+  
+  # make adjusments to data
+  data <- data %>%
+    subset(!is.na(left_chosen)) %>%
+    mutate(pair_type_centered = chosen_trial_centered, 
+           choice_type_centered = ifelse(higher_outcome_chosen==1, 1, -1)) %>%
+    group_by(PID) %>%
+    mutate(zscored_rt = zscore(rt, na.rm=1))
+  
+  # build the formula
+  if (length(third_predictor)==0){
+    third_predictor <- ""
+  } else {
+    third_predictor <- sprintf("*%s",third_predictor)
+  }
+  formula <- sprintf("%s ~ pair_type_centered*choice_type_centered%s +
+                     (pair_type_centered*choice_type_centered%s | PID)",
+                     dependent_measure,third_predictor,third_predictor)
+  # run the model
+  M <- stan_glmer(data = data, 
+                  eval(expr(formula)),
+                  family = gaussian(), 
+                  adapt_delta = params$adapt_delta, 
+                  iter = params$iterations, 
+                  chains = params$chains, 
+                  warmup = params$warmup)
+  # save it
+  assign(sprintf("M_%s_rt_choice_pair",Exp),M)
+  save(list = sprintf("M_%s_rt_choice_pair",Exp),
+       file = sprintf("../data/Models/RT_choice_pair/M_%s_rt_choice_pair.RData",Exp))
+} # end function
+
 
 # -------------------
 # bias ~ memory model
