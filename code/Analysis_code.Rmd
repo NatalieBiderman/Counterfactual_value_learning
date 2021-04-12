@@ -1592,18 +1592,21 @@ means_all_exps <- all_exps_list$final_decisions %>%
   mutate(Exp = factor(Exp, levels = c("Pilot", "Experiment 1", "Experiment 2", "Experiment 3", "Experiment 4"))) %>%
   group_by(Exp, PID, Choice, Condition) %>% 
   dplyr::summarize(p_gain = mean(higher_outcome_chosen, na.rm=1),
-                   pair_acc = mean(pair_acc, na.rm=1)) 
+                   pair_acc = mean(pair_acc, na.rm=1),
+                   choice_acc = mean(choice_acc, na.rm=1)) 
 
 group_means_all_exps <- means_all_exps %>%
   group_by(Exp, Choice, Condition) %>%
   dplyr::summarize(mean_p_gain = mean(p_gain, na.rm=1), se_p_gain = sd(p_gain, na.rm=1)/sqrt(n()),
-                   mean_pair_acc = mean(pair_acc, na.rm=1), se_pair_acc = sd(pair_acc, na.rm=1)/sqrt(n())) %>%
+                   mean_pair_acc = mean(pair_acc, na.rm=1), se_pair_acc = sd(pair_acc, na.rm=1)/sqrt(n()),
+                   mean_choice_acc = mean(choice_acc, na.rm=1), se_choice_acc = sd(choice_acc, na.rm=1)/sqrt(n())) %>%
   mutate(p_gain = sprintf("%.2f \u00b1 %.2f",mean_p_gain, se_p_gain),
-         pair_acc = sprintf("%.2f \u00b1 %.2f",mean_pair_acc, se_pair_acc)) %>%
-  dplyr::select(Exp, Choice, Condition, p_gain, pair_acc) %>%
+         pair_acc = sprintf("%.2f \u00b1 %.2f",mean_pair_acc, se_pair_acc),
+         choice_acc = sprintf("%.2f \u00b1 %.2f",mean_choice_acc, se_choice_acc)) %>%
+  dplyr::select(Exp, Choice, Condition, p_gain, pair_acc, choice_acc) %>%
   spread(Choice, p_gain) %>%
-  dplyr::select(Exp, Condition, Chosen, Unchosen, pair_acc) %>%
-  dplyr::rename(`S+ selection (Chosen pairs)` = Chosen, `S+ selection (Unchosen pairs)` = Unchosen, `Pairs memory` = pair_acc)
+  dplyr::select(Exp, Condition, Chosen, Unchosen, pair_acc, choice_acc) %>%
+  dplyr::rename(`S+ selection (Chosen pairs)` = Chosen, `S+ selection (Unchosen pairs)` = Unchosen, `Pairs memory` = pair_acc, `Choice memory` = choice_acc)
 
 group_means_all_exps %>%
   kbl(caption = "Supplementary Table 1. Behavioral performance in all experiments") %>%
@@ -1765,9 +1768,9 @@ fits_table_across_conds %>%
   kbl(caption = "Supplementary Table 4. Coefficients of interest for chosen and unchosen pairs across conditions") %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left") 
 
-# =====================
-# Memory and bias model
-# =====================
+# =========================================
+# Present model fits: pairs memory and bias 
+# =========================================
 
 if (run_models==1){
   coefs_pair_acc_bias_Pilot <- run_bias_memory_model(subset(clean_data_Pilot$final_decisions, !is.na(left_chosen)),
@@ -1787,10 +1790,6 @@ if (run_models==1){
   load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_pair_acc_bias_Exp3.RData")
   load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_pair_acc_bias_Exp4.RData")
 }
-
-# ===================================
-# Present model fits: memory and bias 
-# ===================================
 
 memory_fits <- function(coef_list, Exp_name){
   post_draws <- coef_list$posterior_draws 
@@ -1824,12 +1823,48 @@ pair_acc_fits <- bind_rows(memory_fits(coefs_pair_acc_bias_Pilot, "Pilot"),
                           memory_fits(coefs_pair_acc_bias_Exp4, "Exp4"))
 
 pair_acc_fits %>%
-  kbl(caption = "Supplementary Table 5. Memory and choice model regression coefficients") %>%
+  kbl(caption = "Supplementary Table 5. Pairs memory and decision bias model regression coefficients") %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left") 
+
+
+# ==========================================
+# Present model fits: choice memory and bias 
+# ==========================================
+
+if (run_models==1){
+  coefs_choice_acc_bias_Pilot <- run_bias_memory_model(subset(clean_data_Pilot$final_decisions, !is.na(left_chosen)),
+                                                     "choice_acc",c(),params,"Pilot")
+  coefs_choice_acc_bias_Exp1 <- run_bias_memory_model(subset(clean_data_Exp1$final_decisions, !is.na(left_chosen)),
+                                                    "choice_acc",c(),params,"Exp1")
+  coefs_choice_acc_bias_Exp2 <- run_bias_memory_model(subset(clean_data_Exp2$final_decisions, !is.na(left_chosen)),
+                                                    "choice_acc","repeat_cond_centered",params,"Exp2")
+  coefs_choice_acc_bias_Exp3 <- run_bias_memory_model(subset(clean_data_Exp3$final_decisions, !is.na(left_chosen)),
+                                                    "choice_acc","reward_cond",params,"Exp3")
+  coefs_choice_acc_bias_Exp4 <- run_bias_memory_model(subset(clean_data_Exp4$final_decisions,!is.na(left_chosen)),
+                                                    "choice_acc","same_painter_centered",params,"Exp4")
+} else {
+  load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_choice_acc_bias_Pilot.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_choice_acc_bias_Exp1.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_choice_acc_bias_Exp2.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_choice_acc_bias_Exp3.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_choice_acc_bias_Exp4.RData")
+}
+
+
+choice_acc_fits <- bind_rows(memory_fits(coefs_choice_acc_bias_Pilot, "Pilot"),
+                            memory_fits(coefs_choice_acc_bias_Exp1, "Exp1"), 
+                            memory_fits(coefs_choice_acc_bias_Exp2, "Exp2"),
+                            memory_fits(coefs_choice_acc_bias_Exp3, "Exp3"),
+                            memory_fits(coefs_choice_acc_bias_Exp4, "Exp4"))
+
+choice_acc_fits %>%
+  kbl(caption = "Supplementary Table 6. Choice memory and decision bias model regression coefficients") %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left") 
+
 
 ```
 
-### Supplementary Text 2
+### Supplementary Text 3
 
 #### Analyzing Experiment 2 (low vs. high repetition of deliberation pairs)
 
