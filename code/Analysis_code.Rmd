@@ -824,14 +824,14 @@ p <- plot_grid(p1,p2,p3,p4,
                label_size = 30,
                label_fontfamily = "Helvetica")
    
-if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure2_new",fig_type), 
+if (Save_plots == 1) {ggsave(filename=sprintf("../results/Plots/%s.%s","Figure2",fig_type), 
                              plot=p, 
                              width=fig_size[1]+4,
                              height=fig_size[2]+4)}
 
 ```
 
-![Figure2. The inferred value of unchosen options is inversely related to the learned value of chosen options (Experiment 1)](../results/Plots/Figure2_new.png) 
+![Figure2. The inferred value of unchosen options is inversely related to the learned value of chosen options (Experiment 1)](../results/Plots/Figure2.png) 
 
 ### Relationship between associative memory and inverse bias
   
@@ -856,14 +856,14 @@ memory_bias <- clean_data_Exp1$final_decisions %>%
 if (run_models==1){
   coefs_pair_acc_bias_Exp1 <- run_bias_memory_model(subset(clean_data_Exp1$final_decisions, !is.na(left_chosen)),
                                                     "pair_acc",c(),params,"Exp1")
-  load("../data/Models/Memory_Bias/Between_subs/Model_objects/M_Exp1_memory_bias.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Model_objects/M_pair_acc_bias_Exp1.RData")
 } else {
-  load("../data/Models/Memory_Bias/Between_subs/Model_objects/M_Exp1_memory_bias.RData")
+  load("../data/Models/Memory_Bias/Between_subs/Model_objects/M_pair_acc_bias_Exp1.RData")
   load("../data/Models/Memory_Bias/Between_subs/Coef_lists/coefs_pair_acc_bias_Exp1.RData")
 }
 
 # Present model coefs
-pairs_acc_model <- as.data.frame(M_Exp1_memory_bias) %>%
+pairs_acc_model <- as.data.frame(M_pair_acc_bias_Exp1) %>%
   gather(coef, value, `(Intercept)`:sigma) %>%
   group_by(coef) %>%
   dplyr::summarize(HDI95_low = posterior_interval(as.matrix(value), prob=0.95)[1],
@@ -1861,6 +1861,30 @@ choice_acc_fits %>%
   kbl(caption = "Supplementary Table 6. Choice memory and decision bias model regression coefficients") %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left") 
 
+
+```
+
+### Supplementary Text 2 - surprise memory test
+
+```{r}
+
+# pairs memory across experiments
+memory_all_exps <- all_exps_list$memory %>%
+  group_by(PID) %>%
+  dplyr::summarise(pairs_acc = mean(pair_acc, na.rm=1),
+                   choice_acc = mean(choice_acc, na.rm=1)) %>%
+  dplyr::summarise(pairs_acc_mean = mean(pairs_acc, na.rm=1),
+                   choice_acc_mean = mean(choice_acc, na.rm=1),
+                   pairs_acc_se = sd(pairs_acc, na.rm=1)/sqrt(n()),
+                   choice_acc_se = sd(choice_acc, na.rm=1)/sqrt(n())) %>%
+  mutate(`Pairs memory` = sprintf("%.2f \u00b1 %.2f",pairs_acc_mean, pairs_acc_se),
+         `Choice memory` = sprintf("%.2f \u00b1 %.2f",choice_acc_mean, choice_acc_se)) %>%
+  select(`Pairs memory`,`Choice memory`)
+
+
+memory_all_exps %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
 
 ```
 

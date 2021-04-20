@@ -224,10 +224,10 @@ run_bias_memory_model <- function(data,memory_predictor,third_predictor,params,E
                 warmup = params$warmup)
   
   # save it
-  assign(sprintf("M_%s_memory_bias",Exp),M)
-  save(list = sprintf("M_%s_memory_bias",Exp),
-       file = sprintf("../data/Models/Memory_Bias/Between_subs/Model_objects/M_%s_memory_bias.RData",Exp))
-  
+  assign(sprintf("M_%s_bias_%s",memory_predictor,Exp),M)
+  save(list = sprintf("M_%s_bias_%s",memory_predictor,Exp),
+       file = sprintf("../data/Models/Memory_Bias/Between_subs/Model_objects/M_%s_bias_%s.RData",memory_predictor,Exp))
+   
   # =================================
   # draws from posterior distribution
   # =================================
@@ -317,8 +317,8 @@ run_bias_memory_model <- function(data,memory_predictor,third_predictor,params,E
   # save object
   # ===========
   
-  model_list <- list(draws, draws_list, predicted_summary_list)
-  names(model_list) <- c("posterior_draws", "posterior_draws_per_cond", "predicted_summary_list")
+  model_list <- list(draws, draws_list, predicted_summary_list, bias_memory)
+  names(model_list) <- c("posterior_draws", "posterior_draws_per_cond", "predicted_summary_list", "bias_memory_data")
   
   # save coef_list
   assign(sprintf("coefs_%s_bias_%s",memory_predictor,Exp),model_list)
