@@ -335,7 +335,7 @@ M_bias_rt_posterior %>%
 # plot models for Supplementary Text 1
 # ====================================
 
-# we create 100 fake x values (zscored RTs), and for each we will predict the y values of every draw from the posterior distributions. We do that for every condition (chosen vs. unchosen pairs) seperately using their rearranged coefs (e.g., the chosen intercept and chosen slope)
+# we create 1000 fake x values (zscored RTs), and for each we will predict the y values of every draw from the posterior distributions. We do that for every condition (chosen vs. unchosen pairs) seperately using their rearranged coefs (e.g., the chosen intercept and chosen slope)
 
 n <- 1000 # number x values
 x_steps <- seq(-5, 5, length.out = n)
@@ -371,7 +371,7 @@ for (c in 1:length(pred_list)){
 }
 
 # line fits
-predicted_draws <- data.frame(predicted_summary_list[[1]]) %>% 
+predicted_draws_rt_model <- data.frame(predicted_summary_list[[1]]) %>% 
   mutate(choice = "Chosen pairs") %>%
   rbind(mutate(data.frame(predicted_summary_list[[2]]),
                choice = "Unchosen pairs")) 
@@ -411,7 +411,7 @@ p1 <- ggplot(RT_FD %>%
        title="RT in Final Decisions")
 
 # model fit
-p2 <- ggplot(predicted_draws, aes(y=median,x=x,group=choice)) +
+p2 <- ggplot(predicted_draws_rt_model, aes(y=median,x=x,group=choice)) +
   geom_ribbon(aes(ymin=lower, ymax=upper), fill="#E9E9E9") + 
   geom_line(aes(y=median, linetype=choice), colour="black", size=linesize*1.5) +  
   geom_hline(yintercept=0.5, size=linesize, linetype="dashed") + 
@@ -655,7 +655,7 @@ names(predicted_group_summary_list)[c] <- names(predicted_group_draws_list)[c]
 }
 
 # line fits
-predicted_draws <- data.frame(predicted_group_summary_list$Chosen_Pairs) %>% 
+predicted_draws_choice_model <- data.frame(predicted_group_summary_list$Chosen_Pairs) %>% 
   mutate(choice = "Chosen pairs") %>%
   rbind(mutate(data.frame(predicted_group_summary_list$Unchosen_Pairs),
                choice = "Unchosen pairs")) 
@@ -670,9 +670,10 @@ choice_model_text <- subset(coef_list_Exp1$summary_group_coefs,
   mutate(x = ifelse(choice=="Chosen", -0.5, 0.5),
          y = ifelse(choice=="Chosen", 0.8, 0.2))
 
+
 # plot fit
 
-p2 <- ggplot(predicted_draws, aes(y=median,x=x,group=choice)) +
+p2 <- ggplot(predicted_draws_choice_model, aes(y=median,x=x,group=choice)) +
   geom_ribbon(aes(ymin=lower, ymax=upper), fill="#E9E9E9") + 
   geom_line(aes(y=median, linetype=choice), colour="black", size=linesize*1.5) +  
   geom_hline(yintercept=0.5, size=linesize, linetype="dashed") + 
@@ -772,7 +773,7 @@ for (c in 1:length(new_data_list)){
     left_join(new_data_list[[c]], by="obs") %>% arrange(obs)
   predicted_summary_list[[c]] <- df_pred; names(predicted_summary_list)[c] <- names(new_data_list)[c]
 }
-predicted_summary <- rbind(predicted_summary_list[[1]],predicted_summary_list[[2]]) %>%
+predicted_summary_bias_estimations <- rbind(predicted_summary_list[[1]],predicted_summary_list[[2]]) %>%
   mutate(p_gain_centered = median,
          choice = ifelse(choice_centered == 1, "Chosen", "Unchosen"))
 
@@ -796,11 +797,11 @@ p4 <- ggplot(subset(inverse_decision_estimation, choice=="Unchosen"),
   geom_point(size=point_size, fill="white", shape=21, stroke=point_stroke) + 
   theme + 
   point_plot_theme +
-  # geom_ribbon(data = predicted_summary, aes(ymin=lower, ymax=upper, group=choice), fill="#E9E9E9")+
-  # geom_line(aes(y=median, linetype = choice), data=predicted_summary, size=line_size*1.5) + 
+  # geom_ribbon(data = predicted_summary_bias_estimations, aes(ymin=lower, ymax=upper, group=choice), fill="#E9E9E9")+
+  # geom_line(aes(y=median, linetype = choice), data=predicted_summary_bias_estimations, size=line_size*1.5) + 
   # scale_linetype_manual(values=c("longdash", "solid")) + 
-  geom_ribbon(data = subset(predicted_summary,choice=="Unchosen"), aes(ymin=lower, ymax=upper), fill="#E9E9E9")+
-  geom_line(data = subset(predicted_summary,choice=="Unchosen"), aes(y=median), size=line_size*1.5) +  
+  geom_ribbon(data = subset(predicted_summary_bias_estimations,choice=="Unchosen"), aes(ymin=lower, ymax=upper), fill="#E9E9E9")+
+  geom_line(data = subset(predicted_summary_bias_estimations,choice=="Unchosen"), aes(y=median), size=line_size*1.5) +  
   geom_hline(yintercept=0, size=line_size, linetype="dashed") + 
   geom_vline(xintercept=0, size=line_size,  linetype="dashed") +
   scale_y_continuous(expand=c(0,0),  breaks=c(-0.5,0,0.5), limits=c(-0.55,0.55)) + 
@@ -2152,5 +2153,255 @@ unchosen_intercept_diffs_Exp4 %>%
   dplyr::select(`unchosen intercept difference between conditions`) %>%
   kbl() %>%
   kable_paper("hover", full_width = F, html_font = "Helvetica", position = "left")
+
+```
+
+# Prepare source data file (data points to create the figures)
+
+```{r}
+
+# Figure 2
+
+fig2a <- clean_data_Exp1$final_decisions %>%
+  mutate(`pair type` = ifelse(chosen_trial==1, "Chosen", "Unchosen")) %>%
+  group_by(PID,`pair type`) %>%
+  dplyr::summarise(`p(select S+)` = mean(higher_outcome_chosen, na.rm=1)) 
+
+fig2b <- predicted_draws_choice_model %>%
+  rename(`normalized delta ratings` = x,
+         `pair type` = choice) %>%
+  mutate(`predicted p(select S+)` = median)
+
+fig2c <- estimates %>%
+  select(c(PID, choice, reward, gain_eval)) %>%
+  rename(`p(estimate as S+)` = gain_eval,
+         `actual reward` = reward,
+         `pair type` = choice)
+
+fig2d_points <- inverse_decision_estimation %>%
+  subset(choice=="Unchosen") %>%
+  select(PID, reward_diff, p_gain_centered) %>%
+  rename(`inverse estimation score` = reward_diff,
+         `p(select S+) - 0.5` = p_gain_centered)
+
+fig2d_fit <- predicted_summary_bias_estimations %>%
+  subset(choice=="Unchosen") %>%
+  select(-c(choice, choice_centered)) %>%
+  rename(`inverse estimation score` = reward_diff,
+         `p(select S+) - 0.5` = p_gain_centered)
+  
+# Figure 3
+
+fig3a_points <- memory_bias %>%
+  select(PID, pair_acc, inverse_bias) %>%
+  rename(`pairs memory` = pair_acc,
+         `inverse decision bias` = inverse_bias)
+
+fig3a_fit <- coefs_pair_acc_bias_Exp1$predicted_summary_list[[1]] %>%
+  rename(`pairs memory` = pair_acc) %>%
+  mutate(`inverse decision bias` = median)
+
+fig3b <- memory_per_deliberation_subs %>%
+  select(-condition) %>%
+  rename(`deliberation pair` = pair_type_cond,
+         `pairs memory` = pair_acc)
+
+# Figure 4
+
+fig4a <- bias_all_exps %>%
+  select(-nudge) %>%
+  rename(`p(select S+)` = p_gain,
+         `pair type` = choice,
+         `pairs memory` = pair_acc) %>%
+  subset(select = c(Exp, PID, `pair type`, condition, `p(select S+)`,`pairs memory`)) %>%
+  mutate(`condition description` = case_when(
+    Exp %in% c("Pilot","Exp1") ~ "None",
+    Exp == "Exp2" & condition==1 ~ "more repetitions",
+    Exp == "Exp2" & condition==0 ~ "less repetitions",
+    Exp == "Exp3" & condition==1 ~ "high reward",
+    Exp == "Exp3" & condition==0 ~ "low reward",
+    Exp == "Exp4" & condition==1 ~ "same painter",
+    Exp == "Exp4" & condition==0 ~ "different painter"))
+
+fig4b_points <- bias_all_exps_spread %>%
+  select(Exp, PID, condition, pair_acc, bias) %>%
+  rename(`pairs memory` = pair_acc,
+         `inverse decision bias` = bias) %>%
+  mutate(`condition description` = case_when(
+    Exp %in% c("Pilot","Exp1") ~ "None",
+    Exp == "Exp2" & condition==1 ~ "more repetitions",
+    Exp == "Exp2" & condition==0 ~ "less repetitions",
+    Exp == "Exp3" & condition==1 ~ "high reward",
+    Exp == "Exp3" & condition==0 ~ "low reward",
+    Exp == "Exp4" & condition==1 ~ "same painter",
+    Exp == "Exp4" & condition==0 ~ "different painter"))
+
+fig4b_fit <- memory_predicted_fits %>%
+  rename(`pairs memory` = pair_acc) %>%
+  mutate(`inverse decision bias` = median,
+         `condition description` = case_when(
+           Exp %in% c("Pilot","Exp1") ~ "None",
+           Exp == "Exp2" & condition==1 ~ "more repetitions",
+           Exp == "Exp2" & condition==0 ~ "less repetitions",
+           Exp == "Exp3" & condition==1 ~ "high reward",
+           Exp == "Exp3" & condition==0 ~ "low reward",
+           Exp == "Exp4" & condition==1 ~ "same painter",
+           Exp == "Exp4" & condition==0 ~ "different painter"))
+
+  
+# Supplementary Figure 1
+
+supp_fig1a <- RT_FD %>%
+  rename(`pair type` = `Pair type`)
+
+supp_fig1b <- predicted_draws_rt_model %>%
+  rename(`zscored rt` = x,
+         `pair type` = choice) %>%
+  mutate(`predicted p(select S+)` = median)
+
+# Supplementary Table 1
+
+table1 <- means_all_exps %>%
+  rename(`p(select S+)` = p_gain,
+         `Pairs Memory` = pair_acc,
+         `Choice Memory` = choice_acc,
+         `Pair Type` = Choice,
+         `Experiment` = Exp) %>%
+  mutate(Condition = ifelse(is.na(Condition),"None",Condition))
+
+# Supplementary Table 2
+
+table2_fits <- function(coef_list, Exp_name){
+  coefs <- bind_cols(data.frame(Experiment=rep(Exp_name,nrow(coef_list$posterior_group_coefs))), coef_list$posterior_group_coefs)
+  if(ncol(coefs) > 9){
+    coefs <- coefs[,c(1:9)]; colnames(coefs) <- c("Experiment","Intercept", "Choice", "Condition", "Choice:Condition", "Ratings",
+                                                  "Choice:Ratings", "Ratings:Condition", "Choice:Ratings:Condition")
+  } else {
+    coefs <- coefs[,c(1:5)]; colnames(coefs) <- c("Experiment","Intercept", "Choice", "Ratings", "Choice:Ratings")
+  }
+  return(coefs)
+}
+
+table2 <- bind_rows(table2_fits(coef_list_Pilot, "Pilot"),
+                    table2_fits(coef_list_Exp1, "Experiment 1"), 
+                    table2_fits(coef_list_Exp2, "Experiment 2"),
+                    table2_fits(coef_list_Exp3, "Experiment 3"),
+                    table2_fits(coef_list_Exp4, "Experiment 4")) 
+
+# Supplementary Table 3
+
+table3_fits <- function(coef_list, Exp_name){
+  relevant_cols <- grepl(c("Intercept_"),colnames(coef_list$posterior_group_coefs)) | 
+    grepl(c("Slope_"),colnames(coef_list$posterior_group_coefs)) 
+  coefs <- coef_list$posterior_group_coefs[, relevant_cols] %>%
+    gather("coef", "value") %>%
+    separate(coef, c("coef","Choice","Condition"), "_") %>%
+    mutate(Experiment = Exp_name)
+  chosen <- coefs %>% subset(Choice=="Chosen") %>% 
+    group_by(coef) %>% mutate(obs = 1:n()) %>% spread(coef, value) %>% rename(`Chosen Intercept` = "Intercept", `Chosen Slope` = "Slope") %>% select(-c(Choice))
+  unchosen <- coefs %>% subset(Choice=="Unchosen") %>% 
+    group_by(coef) %>% mutate(obs = 1:n()) %>% spread(coef, value) %>% rename(`Unchosen Intercept` = "Intercept", `Unchosen Slope` = "Slope") %>% select(-c(Choice))
+  all_coefs <- chosen %>% merge(unchosen, by=c("Experiment", "Condition", "obs")) %>% arrange(obs) %>% select(-obs)
+  return(all_coefs)
+}
+
+table3 <- bind_rows(table3_fits(coef_list_Pilot, "Pilot"),
+                    table3_fits(coef_list_Exp1, "Experiment 1"), 
+                    table3_fits(coef_list_Exp2, "Experiment 2"),
+                    table3_fits(coef_list_Exp3, "Experiment 3"),
+                    table3_fits(coef_list_Exp4, "Experiment 4")) %>% 
+  mutate(Condition = case_when(
+         Condition=="Pairs" ~ "None",
+         Condition=="HighRepeat" ~ "more repetitions",
+         Condition=="LowRepeat"  ~ "less repetitions",
+         Condition=="HighReward" ~ "high reward",
+         Condition=="LowReward" ~ "low reward",
+         Condition=="Same" ~ "same painter",
+         Condition=="Diff" ~ "different painter")) 
+
+# Supplementary Table 4
+
+table4_fits <- function(coef_list, Exp_name){
+  coefs <- coef_list$posterior_group_coefs %>%
+    mutate(Experiment = Exp_name,
+           Chosen_Intercept = `(Intercept)` + chosen_trial_centered,
+           Unchosen_Intercept = `(Intercept)` - chosen_trial_centered,
+           Chosen_Slope = norm_drate_by_outcome + `chosen_trial_centered:norm_drate_by_outcome`,
+           Unchosen_Slope = norm_drate_by_outcome - `chosen_trial_centered:norm_drate_by_outcome`) %>%
+    dplyr::select(c(Experiment,Chosen_Intercept,Unchosen_Intercept,Chosen_Slope,Unchosen_Slope)) %>%
+    gather(coef, value,Chosen_Intercept:Unchosen_Slope) %>%
+    separate(coef, c("choice","coef"), "_") 
+    chosen <- coefs %>% subset(choice=="Chosen") %>% group_by(coef) %>% 
+      mutate(obs = 1:n()) %>% spread(coef, value) %>% 
+      rename(`chosen intercept` = "Intercept", `chosen slope` = "Slope") %>% select(-c(choice))
+    unchosen <- coefs %>% subset(choice=="Unchosen") %>% 
+      group_by(coef) %>% mutate(obs = 1:n()) %>% spread(coef, value) %>% 
+      rename(`unchosen intercept` = "Intercept", `unchosen slope` = "Slope") %>% select(-c(choice))
+  all_coefs <- chosen %>% merge(unchosen, by=c("Experiment", "obs")) %>% arrange(obs) %>% select(-obs)
+  return(all_coefs)
+}
+
+table4 <- bind_rows(table4_fits(coef_list_Exp2, "Experiment 2"),
+                    table4_fits(coef_list_Exp3, "Experiment 3"),
+                    table4_fits(coef_list_Exp4, "Experiment 4"))
+
+# Supplementary Table 5
+
+table5_fits <- function(coef_list, Exp_name){
+  coefs <- bind_cols(data.frame(Experiment=rep(Exp_name,nrow(coef_list$posterior_draws))),
+                     coef_list$posterior_draws)
+  if (ncol(coefs) > 4) {
+    coefs <- coefs %>%
+      mutate(Slope_cond1 = coefs[,3] + coefs[,5],
+             Slope_cond0 = coefs[,3] - coefs[,5])
+    colnames <- c("Experiment","Intercept", "Memory", "Condition", "Memory:Condition", "Sigma", 
+                  "Memory (Condition1)", "Memory (Condition2)")
+  } else {
+    colnames <- c("Experiment","Intercept", "Memory", "Sigma")
+  }
+  colnames(coefs) <- colnames
+  coefs <- coefs %>% select(-Sigma)
+  return(coefs)
+}
+
+table5 <- bind_rows(table5_fits(coefs_pair_acc_bias_Pilot, "Pilot"),
+                    table5_fits(coefs_pair_acc_bias_Exp1, "Experiment 1"), 
+                    table5_fits(coefs_pair_acc_bias_Exp2, "Experiment 2"),
+                    table5_fits(coefs_pair_acc_bias_Exp3, "Experiment 3"),
+                    table5_fits(coefs_pair_acc_bias_Exp4, "Experiment 4"))
+
+
+# Supplementary Table 6
+
+table6 <- bind_rows(table5_fits(coefs_choice_acc_bias_Pilot, "Pilot"),
+                    table5_fits(coefs_choice_acc_bias_Exp1, "Experiment 1"), 
+                    table5_fits(coefs_choice_acc_bias_Exp2, "Experiment 2"),
+                    table5_fits(coefs_choice_acc_bias_Exp3, "Experiment 3"),
+                    table5_fits(coefs_choice_acc_bias_Exp4, "Experiment 4"))
+
+
+
+# Save it all into one excel file with different sheets
+library(openxlsx)
+sheets_list <- list("fig2a" = fig2a, 
+                    "fig2b" = fig2b, 
+                    "fig2c" = fig2c, 
+                    "fig2d_points" = fig2d_points, 
+                    "fig2d_fit" = fig2d_fit, 
+                    "fig3a_points" = fig3a_points, 
+                    "fig3a_fit" = fig3a_fit, 
+                    "fig3b" = fig3b, 
+                    "fig4a" = fig4a, 
+                    "fig4b_points" = fig4b_points, 
+                    "fig4b_fit" = fig4b_fit, 
+                    "supp_fig1a" = supp_fig1a, 
+                    "supp_fig1b" = supp_fig1b,
+                    "table1" = table1,
+                    "table2" = table2,
+                    "table3" = table3,
+                    "table4" = table4,
+                    "table5" = table5,
+                    "table6" = table6) 
+write.xlsx(sheets_list, "../results/Source_Data.xlsx")
 
 ```
