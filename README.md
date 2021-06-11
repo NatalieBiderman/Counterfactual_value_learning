@@ -1,5 +1,5 @@
-<center> <h3>How we learn to value the road not taken: Deliberation and memory shape the valuation of unchosen options</h3> </center>
-<center> <h4>Natalie Biderman and Daphna Shohamy, November 2020</center> </h4>
+<center> <h3>Memory and Decision Making Interact to Shape the Value of Unchosen Options</h3> </center>
+<center> <h4>Natalie Biderman and Daphna Shohamy, June 2021</center> </h4>
   
   
 <span style="font-size:1.2em;">
